@@ -2,40 +2,38 @@
 
 ### A Student Learning & Collaboration Platform
 
-SkillUp is a full-stack web platform designed to help students learn together, find suitable study partners, communicate with other learners, and manage their study sessions in one place.
+SkillUp is a full-stack web application built to make collaborative learning easier for students.
 
-The idea behind SkillUp came from a simple problem: finding serious and compatible students to study with can be difficult. SkillUp brings study partner matching, communication, study rooms, AI assistance, and student profiles together into a single platform.
-
----
-
-## 🚀 What is SkillUp?
-
-SkillUp is built around the idea of making collaborative learning easier.
-
-Students can create their own profile, add the subjects and skills they are interested in, describe what they are currently looking for, and discover other students with similar learning goals.
-
-Instead of treating every student the same, SkillUp uses profile information such as skills, interests, and learning requirements to help find more relevant study partners.
-
-The platform also provides tools for students to communicate and study together after connecting.
+The idea is simple: students often want to study with people who have similar interests, subjects, schedules, or learning goals, but finding the right study partner is not always easy. SkillUp brings study partner matching, communication, study rooms, AI assistance, and student profiles together in one platform.
 
 ---
 
-## ✨ Main Features
+## 🚀 Overview
+
+SkillUp allows students to create a learning profile, discover other students, connect with them, communicate, and participate in collaborative study sessions.
+
+A student's skills, interests, and learning requirements are used by the matching system to find more relevant study partners.
+
+The platform is designed as a practical full-stack project, combining a React frontend with a Node.js backend, MongoDB, real-time communication, AI services, and cloud storage.
+
+---
+
+## ✨ Features
 
 ### 🔐 Authentication
 
 - Student registration and login
-- Secure password hashing
 - JWT-based authentication
 - Protected routes
-- Forgot password functionality
-- Password reset flow
-- Change password from Settings
+- Secure password hashing with bcrypt
+- Forgot password
+- Password reset
+- Change password
 - Server-side registration validation
 
 ### 👤 Student Profiles
 
-Students can maintain their learning profile with:
+Students can manage:
 
 - Name
 - Profile photo
@@ -43,142 +41,113 @@ Students can maintain their learning profile with:
 - Interests
 - Learning requirements
 
-Profile information is stored on the backend and can be updated from the Settings page.
+Profile information is stored on the backend and can be updated from Settings.
 
-Profile photos are uploaded and hosted using Cloudinary rather than being stored as local files.
-
----
+Profile images are uploaded through Cloudinary.
 
 ### 🤝 Find Study Partners
 
-SkillUp includes a study partner matching system that helps students discover other learners based on their profile information.
+Students can discover and connect with other learners based on their profile information.
 
-Students can:
+Features include:
 
-- Browse available study partners
-- Search for students
-- Filter matches
-- View partner profiles
-- Check compatibility information
-- Send connection requests
-- Manage connection requests
+- Partner search
+- Filters
+- Compatibility-based matching
+- Partner profiles
+- Connection requests
+- Connection management
 
-Updated profile information is also used by the matching system.
+### 💬 Direct Messaging
 
----
+Connected students can communicate through real-time direct messaging.
 
-### 💬 Connections & Messaging
-
-After connecting with another student, users can communicate through the platform.
-
-The messaging system supports:
-
-- Direct conversations
+- One-to-one conversations
 - Real-time messages
 - Message persistence
 - Conversation history
-- Bidirectional communication
-
-Real-time communication is handled using Socket.IO.
-
----
+- Socket.IO communication
 
 ### 📚 Study Rooms
 
-Students can use Study Rooms to study together.
+Students can create and join collaborative study sessions.
 
-Study Rooms provide a shared space where students can:
+Study Rooms include:
 
-- Join study sessions
-- Communicate through room chat
-- Interact with other members
-- Continue collaborative study sessions
-
----
+- Room membership
+- Study session management
+- Real-time room chat
+- Collaborative learning space
 
 ### 🎥 Video Calling
 
-SkillUp includes real-time video calling for study sessions.
+Study Rooms support browser-based video communication.
 
-The video system is designed around browser-based communication and real-time socket events.
+Current functionality includes:
 
-Supported functionality includes:
-
+- Camera
+- Microphone
 - Two-user video communication
-- Camera access
-- Microphone access
-- Joining and leaving calls
-- Reconnecting to sessions
+- Join and leave calls
+- Reconnection handling
 - Screen sharing
 
-Screen sharing uses the browser's media capture capabilities.
-
-> Video and screen-sharing functionality requires browser permissions for camera, microphone, and screen capture.
-
----
+Camera, microphone, and screen sharing require the appropriate browser permissions.
 
 ### 🤖 EDITH AI
 
-SkillUp includes an AI assistant called **EDITH**.
+EDITH is the AI assistant integrated into SkillUp.
 
-EDITH can interact with students through the platform and provide AI-based assistance.
+It supports conversational interaction and can work with uploaded study material through a Retrieval-Augmented Generation (RAG) pipeline.
 
-The project also includes a document-based RAG pipeline for working with uploaded study material.
-
-The RAG system includes components for:
+The RAG system includes:
 
 - PDF processing
 - Text chunking
 - Embeddings
 - Vector storage
 - Document retrieval
-- Context-based AI responses
+- Context-aware responses
 
-This allows the project to move beyond a simple chatbot and experiment with AI-assisted learning using student-provided material.
-
----
+EDITH also supports conversation history so follow-up questions can be understood in context.
 
 ### 📊 Dashboard
 
-The dashboard provides a central place for students to view their learning activity.
+The dashboard provides a central view of available student activity and collaboration data.
 
-It includes areas such as:
+It includes:
 
-- Study activity
+- Study sessions
 - Study partners
 - Recent activity
-- Progress information
-- Study room access
-- Platform navigation
+- Study information
+- Quick access to study rooms
+- Application navigation
 
-The dashboard is connected to real application data rather than relying on fabricated user statistics.
-
----
+The dashboard uses real backend data wherever tracking is available instead of displaying fabricated statistics.
 
 ### 📈 Analytics
 
-SkillUp includes an Analytics section for displaying available learning-related metrics.
+Analytics provides available learning and collaboration metrics.
 
-Where a metric is not currently tracked by the system, the application uses an honest `N/A` or `Coming Soon` state instead of displaying made-up statistics.
-
----
+Metrics that are not currently tracked by the application are shown as `N/A` or `Coming Soon` rather than using made-up values.
 
 ### ⚙️ Settings
 
-The Settings section allows students to manage their account and profile.
+Students can manage their account and learning profile from Settings.
 
-Available functionality includes:
+Available options include:
 
 - Profile information
+- Profile photo
 - Skills
 - Interests
 - Learning requirements
-- Profile photo
 - Password change
 - Appearance settings
-- Account-related settings
+- Account settings
 
-Email changing is currently read-only because a verified email-change flow has not been implemented yet.
+Email changing is currently read-only because a verified email-change workflow has not yet been implemented.
 
 ---
 
@@ -190,9 +159,9 @@ Email changing is currently read-only because a verified email-change flow has n
 - Vite
 - JavaScript
 - CSS
-- Lucide React
-- Socket.IO Client
 - Axios
+- React Markdown
+- Socket.IO Client
 
 ### Backend
 
@@ -206,12 +175,12 @@ Email changing is currently read-only because a verified email-change flow has n
 
 ### AI & RAG
 
-- AI API integration
-- Document processing
+- NVIDIA AI API integration
 - PDF processing
 - Text chunking
 - Embeddings
 - Vector retrieval
+- Pinecone
 
 ### Cloud Services
 
