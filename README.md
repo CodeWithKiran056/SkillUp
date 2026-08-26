@@ -2,38 +2,67 @@
 
 ### A Student Learning & Collaboration Platform
 
-SkillUp is a full-stack web application built to make collaborative learning easier for students.
+SkillUp is a full-stack web application designed to help students find compatible study partners, create collaborative study rooms, communicate with other learners, and use AI-powered assistance for their learning journey.
 
-The idea is simple: students often want to study with people who have similar interests, subjects, schedules, or learning goals, but finding the right study partner is not always easy. SkillUp brings study partner matching, communication, study rooms, AI assistance, and student profiles together in one platform.
+The platform combines student profiles, compatibility-based partner discovery, connection requests, real-time messaging, collaborative study rooms, video communication, session recording, analytics, and an AI assistant with RAG-based study-material support.
+
+---
+
+## 🌐 Live Demo
+
+**Production Website:**  
+https://skillup-frontend-up4n.onrender.com
+
+**Backend API:**  
+https://skillup-api-st8q.onrender.com
+
+> The frontend and backend are deployed separately. The frontend communicates with the production backend through the configured `VITE_API_URL` environment variable.
 
 ---
 
 ## 🚀 Overview
 
-SkillUp allows students to create a learning profile, discover other students, connect with them, communicate, and participate in collaborative study sessions.
+Students often want to study with people who have similar subjects, skills, interests, schedules, or learning goals, but finding the right study partner can be difficult.
 
-A student's skills, interests, and learning requirements are used by the matching system to find more relevant study partners.
+SkillUp brings these activities together in one platform:
 
-The platform is designed as a practical full-stack project, combining a React frontend with a Node.js backend, MongoDB, real-time communication, AI services, and cloud storage.
+- Create and manage a student learning profile
+- Discover compatible study partners
+- Send and manage connection requests
+- Communicate through direct messaging
+- Create and join collaborative study rooms
+- Request access to other students' rooms
+- Conduct study sessions with video communication
+- Record study sessions with explicit user consent
+- Use EDITH AI for learning assistance
+- Upload study material for RAG-based AI assistance
+- Track available learning and collaboration activity
+
+SkillUp is built as a practical full-stack project using modern web technologies, real-time communication, AI services, cloud storage, and a cloud-hosted database.
 
 ---
 
 ## ✨ Features
 
-### 🔐 Authentication
+### 🔐 Authentication & Account Security
 
 - Student registration and login
 - JWT-based authentication
 - Protected routes
 - Secure password hashing with bcrypt
-- Forgot password
-- Password reset
-- Change password
 - Server-side registration validation
+- Forgot password workflow
+- Password reset workflow
+- Change password
+- Authentication-related email support
+
+---
 
 ### 👤 Student Profiles
 
-Students can manage:
+Students can create and manage their learning profile.
+
+Profile information includes:
 
 - Name
 - Profile photo
@@ -41,79 +70,125 @@ Students can manage:
 - Interests
 - Learning requirements
 
-Profile information is stored on the backend and can be updated from Settings.
+Profile images are uploaded through Cloudinary and profile information is stored through the backend.
 
-Profile images are uploaded through Cloudinary.
+---
 
 ### 🤝 Find Study Partners
 
-Students can discover and connect with other learners based on their profile information.
+SkillUp helps students discover and connect with other learners.
 
 Features include:
 
-- Partner search
-- Filters
+- Student search
+- Profile-based filtering
 - Compatibility-based matching
 - Partner profiles
 - Connection requests
-- Connection management
+- Connection request management
+- Partner discovery based on learning information
+
+The goal is to make it easier for students to find people with relevant learning goals and interests.
+
+---
 
 ### 💬 Direct Messaging
 
 Connected students can communicate through real-time direct messaging.
 
+Features include:
+
 - One-to-one conversations
-- Real-time messages
-- Message persistence
+- Real-time message delivery
 - Conversation history
+- Message persistence
 - Socket.IO communication
+- User profile information within conversations
+
+---
 
 ### 📚 Study Rooms
 
-Students can create and join collaborative study sessions.
+Study Rooms provide collaborative spaces where students can learn together.
 
-Study Rooms include:
+Students can:
 
-- Room membership
-- Study session management
-- Real-time room chat
-- Collaborative learning space
+- Create their own study room
+- Discover study rooms created by other students
+- Send join requests
+- Accept or reject requests when they own a room
+- Join rooms after approval
+- Manage room membership
+- Participate in room communication
+- Start collaborative study sessions
 
-### 🎥 Video Calling
+### New-user experience
+
+A newly registered student does not automatically see existing study-room cards in their personal Study Rooms area.
+
+Instead, the user sees:
+
+> **Create or join the study room**
+
+The user can then either:
+
+- Create a new Study Room
+- Explicitly open **Find Study Rooms** to discover rooms created by other students
+
+This keeps the personal workspace clean while preserving the discovery flow.
+
+---
+
+### 🎥 Video Calling & Study Sessions
 
 Study Rooms support browser-based video communication.
 
 Current functionality includes:
 
-- Camera
-- Microphone
+- Camera access
+- Microphone access
 - Two-user video communication
 - Join and leave calls
 - Reconnection handling
 - Screen sharing
-- Study session recording
-- Records the active call using the browser's native MediaRecorder API
-- Requires an explicit user action (clicking **Record**)
-- Shows a visible **● REC** indicator with a live timer while recording
-- Saved securely to Cloudinary and linked to the study session in MongoDB
-- Recorded sessions can be replayed from the study room's video-call UI
-  (a "Session Recordings" list uses the browser's HTML5 video player)
+- Study-session recording
+- Session recording playback
+
+#### Session Recording
+
+Recording uses the browser's native `MediaRecorder` API.
+
+Recording:
+
+- Starts only after the participant explicitly clicks **Record**
+- Displays a visible **● REC** indicator with a live timer
+- Is uploaded through the authenticated backend
+- Uses Cloudinary for recording storage
+- Stores recording metadata with the study session in MongoDB
+- Can be replayed through the browser's HTML5 video player
+
+### Recording Privacy
+
+Recording is an explicit user action. A recording does not start automatically.
+
+Recordings are uploaded through the authenticated backend and are intended to be accessible only to members of the corresponding study session.
 
 Camera, microphone, and screen sharing require the appropriate browser permissions.
 
-> **Recording privacy:** recording only starts when a participant explicitly clicks
-> **Record**, and a red recording indicator is always visible while a recording is
-> active. Recordings are uploaded to the authenticated backend and are only
-> accessible to members of the study session.
+---
 
 ### 🤖 EDITH AI
 
-EDITH is the AI assistant integrated into SkillUp.
+**EDITH** is SkillUp's integrated AI learning assistant.
 
-It supports conversational interaction and can work with uploaded study material through a Retrieval-Augmented Generation (RAG) pipeline.
+It supports conversational learning assistance and can work with uploaded study material through a Retrieval-Augmented Generation (RAG) pipeline.
 
-The RAG system includes:
+EDITH includes:
 
+- Conversational AI interaction
+- Follow-up questions
+- Conversation history
+- Study-material processing
 - PDF processing
 - Text chunking
 - Embeddings
@@ -121,28 +196,75 @@ The RAG system includes:
 - Document retrieval
 - Context-aware responses
 
-EDITH also supports conversation history so follow-up questions can be understood in context.
+The AI service is integrated through the backend so provider credentials remain server-side.
+
+---
+
+### 📄 RAG Study Material Support
+
+The RAG pipeline allows EDITH to use uploaded learning material as additional context.
+
+High-level flow:
+
+PDF / Study Material  
+↓  
+Document Processing  
+↓  
+Text Extraction  
+↓  
+Text Chunking  
+↓  
+Embeddings  
+↓  
+Vector Storage  
+↓  
+Relevant Context Retrieval  
+↓  
+EDITH AI Response
+
+Pinecone is used for vector retrieval, while the backend manages document processing and AI-provider communication.
+
+---
 
 ### 📊 Dashboard
 
-The dashboard provides a central view of available student activity and collaboration data.
+The Dashboard provides a central view of the student's learning and collaboration activity.
 
-It includes:
+Depending on available data, it can include:
 
 - Study sessions
 - Study partners
 - Recent activity
 - Study information
-- Quick access to study rooms
+- Quick access to Study Rooms
 - Application navigation
 
-The dashboard uses real backend data wherever tracking is available instead of displaying fabricated statistics.
+The application uses real backend data where tracking is available rather than presenting fabricated statistics.
+
+---
 
 ### 📈 Analytics
 
-Analytics provides available learning and collaboration metrics.
+The Analytics section presents available learning and collaboration metrics.
 
-Metrics that are not currently tracked by the application are shown as `N/A` or `Coming Soon` rather than using made-up values.
+Where a metric is not currently tracked by the application, the interface uses values such as:
+
+- `N/A`
+- `Coming Soon`
+
+instead of displaying made-up statistics.
+
+---
+
+### 🗓️ My Sessions
+
+My Sessions provides the student's study-session view.
+
+It is based on the student's own room membership and created rooms rather than simply displaying every room in the database.
+
+Pending join requests are tracked separately so that a pending request does not incorrectly appear as an owned or joined study room.
+
+---
 
 ### ⚙️ Settings
 
@@ -184,6 +306,7 @@ Email changing is currently read-only because a verified email-change workflow h
 - JWT
 - bcrypt
 - Socket.IO
+- CORS
 
 ### AI & RAG
 
@@ -191,25 +314,53 @@ Email changing is currently read-only because a verified email-change workflow h
 - PDF processing
 - Text chunking
 - Embeddings
-- Vector retrieval
-- Pinecone
+- Pinecone vector retrieval
 
 ### Cloud Services
 
-- Cloudinary for profile image hosting and study session recordings
-- MongoDB for application data (including recording metadata)
-- Email service for authentication-related emails
-
-Server-side environment variables for recording storage reuse the existing
-Cloudinary credentials (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`,
-`CLOUDINARY_API_SECRET`). No new credentials are required; Cloudinary secrets
-never leave the server.
+- Render — frontend and backend deployment
+- MongoDB Atlas — application database
+- Cloudinary — profile images and study-session recordings
+- Email service — authentication-related emails
+- Pinecone — vector retrieval for RAG
 
 ---
 
-## 🏗️ Project Structure
+## 🏗️ Project Architecture
 
 ```text
+                         ┌─────────────────────────┐
+                         │       SkillUp User      │
+                         └────────────┬────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────┐
+                         │   React + Vite Client   │
+                         │        Frontend         │
+                         └────────────┬────────────┘
+                                      │ HTTPS
+                                      │ REST / Socket.IO
+                                      ▼
+                         ┌─────────────────────────┐
+                         │   Node.js + Express     │
+                         │        Backend          │
+                         └──────┬──────┬──────┬────┘
+                                │      │      │
+                ┌───────────────┘      │      └────────────────┐
+                ▼                      ▼                       ▼
+       ┌────────────────┐     ┌────────────────┐      ┌────────────────┐
+       │ MongoDB Atlas  │     │ NVIDIA AI API  │      │   Cloudinary   │
+       │ Application DB │     │    EDITH AI    │      │ Images/Records │
+       └────────────────┘     └────────────────┘      └────────────────┘
+                                      │
+                                      ▼
+                              ┌────────────────┐
+                              │    Pinecone    │
+                              │ Vector Search  │
+                              └────────────────┘
+
+📁 Project Structure
+
 SkillUp/
 │
 ├── client/
@@ -220,6 +371,7 @@ SkillUp/
 │       ├── socket/
 │       ├── styles/
 │       ├── utils/
+│       ├── config/
 │       ├── App.jsx
 │       └── main.jsx
 │
@@ -235,4 +387,11 @@ SkillUp/
 │   ├── utils/
 │   └── server.js
 │
-└── .gitignore
+├── .gitignore
+└── README.md
+
+Security
+
+Cloud-service credentials and AI-provider keys remain server-side.
+Cloudinary recording storage reuses the existing server-side Cloudinary credentials. No new recording-specific credentials are required.
+
