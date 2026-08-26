@@ -20,6 +20,7 @@ function MySessions() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pendingCount, setPendingCount] = useState(0);
 
   const token = localStorage.getItem("token");
 
@@ -90,32 +91,7 @@ function MySessions() {
   };
 
   /*
-   * Check pending request
-   */
-  const isPending = (room) => {
-    if (!room || !currentUserId) {
-      return false;
-    }
-
-    if (!Array.isArray(room.pendingRequests)) {
-      return false;
-    }
-
-    return room.pendingRequests.some((request) => {
-      const requestId =
-        request?._id ||
-        request?.id ||
-        request;
-
-      return (
-        normalizeId(requestId) ===
-        normalizeId(currentUserId)
-      );
-    });
-  };
-
-  /*
-   * Fetch all study rooms
+   * Fetch my study rooms
    */
   const fetchRooms = async () => {
     setLoading(true);
@@ -138,6 +114,26 @@ function MySessions() {
       );
 
       setRooms(response.data?.rooms || []);
+
+      /* Pending join requests are NOT part of scope=mine
+         (a pending request must never show as my room),
+         so they are fetched separately for the stat. */
+      try {
+        const pendingResponse = await axios.get(
+          `${API_URL}/api/rooms?scope=pending`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        setPendingCount(
+          pendingResponse.data?.count || 0
+        );
+      } catch {
+        setPendingCount(0);
+      }
     } catch (err) {
       console.error(
         "Fetch Rooms Error:",
@@ -169,12 +165,6 @@ function MySessions() {
    */
   const joinedRooms = useMemo(
     () => rooms.filter((room) => isMember(room)),
-    [rooms, currentUserId]
-  );
-
-  const pendingCount = useMemo(
-    () =>
-      rooms.filter((room) => isPending(room)).length,
     [rooms, currentUserId]
   );
 

@@ -71,25 +71,30 @@ const createRoom = async (req, res) => {
 const getRooms = async (req, res) => {
     try {
         /*
-         * scope=mine -> server-side filter using the JWT user id:
-         * only rooms the current user created, is a member of,
-         * or has a pending join request for.
+         * Server-side scoping using the JWT user id:
          *
-         * Default (no scope) keeps returning every room so the
-         * discovery / Request-to-Join flow still works.
+         * scope=mine   -> ONLY rooms the user created OR is already
+         *                 a member of. A pending join request must
+         *                 NEVER make a room appear here.
+         * scope=pending -> only rooms where the user has a pending
+         *                 join request (used for pending counts).
+         * Default       -> every room, so discovery / Request-to-Join
+         *                 keeps working.
          */
         const userId = req.user.id;
 
-        const filter =
-            req.query.scope === "mine"
-                ? {
-                      $or: [
-                          { createdBy: userId },
-                          { members: userId },
-                          { pendingRequests: userId },
-                      ],
-                  }
-                : {};
+        let filter = {};
+
+        if (req.query.scope === "mine") {
+            filter = {
+                $or: [
+                    { createdBy: userId },
+                    { members: userId },
+                ],
+            };
+        } else if (req.query.scope === "pending") {
+            filter = { pendingRequests: userId };
+        }
 
         const rooms = await Room.find(filter)
             .sort({ createdAt: -1 })

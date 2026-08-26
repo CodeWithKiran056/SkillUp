@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import {
   Bell,
@@ -8,7 +8,6 @@ import {
   Plus,
   MessageCircle,
   Search,
-  Users,
 } from "lucide-react";
 
 import ChatRoom from "../components/ChatRoom";
@@ -20,7 +19,6 @@ import { API_URL } from "../config/api";
 
 function StudyRoom() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
 
   /*
@@ -226,8 +224,9 @@ function StudyRoom() {
     }
 
     try {
-      /* MY ROOMS ONLY - server-side filtered with the JWT user
-         (rooms I created, I am a member of, or requested to join). */
+      /* MY ROOMS - server-side filtered with the JWT user.
+         STRICT: only rooms I created OR am already a member of.
+         Pending join requests never appear here. */
       const response = await axios.get(
         `${API_URL}/api/rooms?scope=mine`,
         {
@@ -244,6 +243,8 @@ function StudyRoom() {
 
       /* DISCOVERY LIST - all remaining rooms, used for
          Request to Join. Failures here are non-fatal. */
+      let discovered = [];
+
       try {
         const discoverResponse =
           await axios.get(`${API_URL}/api/rooms`, {
@@ -258,24 +259,31 @@ function StudyRoom() {
           )
         );
 
-        setDiscoverRooms(
-          (
-            discoverResponse.data?.rooms || []
-          ).filter(
-            (room) =>
-              !mineIds.has(String(room._id))
-          )
+        discovered = (
+          discoverResponse.data?.rooms || []
+        ).filter(
+          (room) =>
+            !mineIds.has(String(room._id))
         );
+
+        setDiscoverRooms(discovered);
       } catch {
         setDiscoverRooms([]);
       }
 
       /*
-       * Rebuild pending request state
+       * Rebuild pending request state.
+       * Pending-only rooms are NOT part of scope=mine,
+       * so check both my rooms and discovery rooms -
+       * this is what shows "Request Pending" in discovery
+       * without ever putting the room into My Rooms.
        */
       const pendingStatus = {};
 
-      fetchedRooms.forEach((room) => {
+      [
+        ...fetchedRooms,
+        ...discovered,
+      ].forEach((room) => {
         const pendingRequests =
           room.pendingRequests || [];
 
@@ -938,13 +946,13 @@ function StudyRoom() {
             </div>
 
             <h3 className="mt-4 text-lg font-semibold">
-              You don't have any study rooms yet
+              Create or join the study room
             </h3>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-secondary)]">
-              Create a study room, invite your
-              friends or find new partners and
-              start learning together.
+              Create your own study room or join a
+              study room with other students to start
+              learning together.
             </p>
 
             <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -968,11 +976,19 @@ function StudyRoom() {
 
               <button
                 type="button"
-                onClick={() => navigate("/find-partner")}
+                onClick={() =>
+                  document
+                    .getElementById(
+                      "discover-study-rooms"
+                    )
+                    ?.scrollIntoView({
+                      behavior: "smooth",
+                    })
+                }
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-transparent px-5 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
               >
-                <Users size={16} />
-                Find Study Partner
+                <Search size={16} />
+                Find Study Rooms
               </button>
 
             </div>
@@ -1040,7 +1056,10 @@ function StudyRoom() {
           mixing other users' rooms into My Rooms.
       ========================== */}
 
-      <section className="mt-12">
+      <section
+        id="discover-study-rooms"
+        className="mt-12"
+      >
 
         <div className="flex items-center gap-2">
           <Search
