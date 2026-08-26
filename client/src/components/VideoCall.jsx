@@ -4,10 +4,12 @@ import {
   MicOff,
   Video,
   VideoOff,
+  CircleDot,
   MonitorUp,
   Maximize2,
   Minimize2,
   PhoneOff,
+  Square,
   Users,
   Wifi,
 } from "lucide-react";
@@ -33,6 +35,187 @@ function VideoCall({ roomId, userName = "You" }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const recordingStreamRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+  const recordingStartRef = useRef(0);
+
+  const buildRecordingStream = () => {
+    const streams = [
+      localStreamRef.current,
+      ...Object.values(remoteStreamsRef.current),
+    ];
+
+    const tracks = [];
+
+    streams.forEach((stream) => {
+      if (!stream) return;
+
+      stream.getTracks().forEach((track) => {
+        if (!tracks.some((existing) => existing === track)) {
+          tracks.push(track);
+        }
+      });
+    });
+
+    if (tracks.length === 0) return null;
+
+    return new MediaStream(tracks);
+  };
+
+  const formatRecordingTime = (totalSeconds) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  };
+
+  const generateRecordingFilename = (mimeType) => {
+    const now = new Date();
+
+    const pad = (value) => String(value).padStart(2, "0");
+
+    const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}`;
+    const extension = mimeType?.includes("mp4") ? "mp4" : "webm";
+
+    return `SkillUp-StudySession-${datePart}.${extension}`;
+  };
+
+  const finalizeRecording = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    setRecordingTime(0);
+    setIsRecording(false);
+    mediaRecorderRef.current = null;
+    recordingStreamRef.current = null;
+  };
+
+  const startRecording = () => {
+    if (isRecording) return;
+
+    if (typeof MediaRecorder === "undefined") {
+      setError("Recording is not supported in this browser.");
+      return;
+    }
+
+    const recordingStream = buildRecordingStream();
+
+    if (!recordingStream || recordingStream.getTracks().length === 0) {
+      setError("There is no active audio/video to record right now.");
+      return;
+    }
+
+    const supportedTypes = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4",
+    ];
+
+    const mimeType = supportedTypes.find(
+      (type) =>
+        typeof MediaRecorder.isTypeSupported === "function" &&
+        MediaRecorder.isTypeSupported(type)
+    );
+
+    recordedChunksRef.current = [];
+    recordingStreamRef.current = recordingStream;
+
+    try {
+      const recorder = mimeType
+        ? new MediaRecorder(recordingStream, {
+            mimeType,
+            videoBitsPerSecond: 2_500_000,
+          })
+        : new MediaRecorder(recordingStream);
+
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setError("Recording failed. Please try recording again.");
+        finalizeRecording();
+      };
+
+      recorder.onstop = () => {
+        finalizeRecording();
+
+        const recordingBlob = new Blob(recordedChunksRef.current, {
+          type: recorder.mimeType || "video/webm",
+        });
+
+        recordedChunksRef.current = [];
+
+        if (recordingBlob.size === 0) {
+          setError(
+            "Recording finished, but no media was captured. Please try again."
+          );
+          return;
+        }
+
+        const downloadUrl = URL.createObjectURL(recordingBlob);
+
+        const downloadLink = document.createElement("a");
+
+        downloadLink.href = downloadUrl;
+        downloadLink.download = generateRecordingFilename(recordingBlob.type);
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
+
+        setTimeout(() => {
+          URL.revokeObjectURL(downloadUrl);
+        }, 1000);
+      };
+
+      recorder.start(1000);
+
+      recordingStartRef.current = Date.now();
+      setError("");
+      setRecordingTime(0);
+      setIsRecording(true);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(
+          Math.floor((Date.now() - recordingStartRef.current) / 1000)
+        );
+      }, 1000);
+    } catch (err) {
+      console.error("Recording error:", err);
+
+      setError("Unable to start recording. Please try again.");
+      mediaRecorderRef.current = null;
+      recordingStreamRef.current = null;
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+
+    if (!recorder || recorder.state === "inactive") {
+      finalizeRecording();
+      return;
+    }
+
+    try {
+      recorder.stop();
+    } catch (err) {
+      console.error("Stop recording error:", err);
+      finalizeRecording();
+    }
+  };
 
   const createPeerConnection = (targetSocketId, shouldCreateOffer) => {
     if (peerConnectionsRef.current[targetSocketId]) {
@@ -264,6 +447,8 @@ function VideoCall({ roomId, userName = "You" }) {
       );
       socket.off("userLeft", handleUserLeft);
 
+      stopRecording();
+
       socket.emit("leaveVideoRoom", roomId);
 
       Object.values(
@@ -439,6 +624,7 @@ function VideoCall({ roomId, userName = "You" }) {
   };
 
   const leaveRoom = () => {
+    stopRecording();
     socket.emit("leaveVideoRoom", roomId);
 
     Object.values(
@@ -495,6 +681,16 @@ function VideoCall({ roomId, userName = "You" }) {
 
       {/* Video Area */}
       <div className="relative min-h-[520px] bg-[#08090d] p-3 pt-16">
+        {/* Recording Indicator */}
+        {isRecording && (
+          <div className="absolute left-3 top-14 z-10 flex items-center gap-2 rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--error)] opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--error)]" />
+            </span>
+            REC · {formatRecordingTime(recordingTime)}
+          </div>
+        )}
         <div
           className={`grid h-full min-h-[440px] gap-3 ${
             remoteStreams.length === 0
@@ -602,6 +798,32 @@ function VideoCall({ roomId, userName = "You" }) {
             <Maximize2 size={19} />
           )}
         </ControlButton>
+
+        <button
+          type="button"
+          onClick={isRecording ? stopRecording : startRecording}
+          className={`ml-2 flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium transition ${
+            isRecording
+              ? "bg-[var(--error)] text-white hover:opacity-90"
+              : "bg-white/10 text-white hover:bg-white/15"
+          }`}
+        >
+          {isRecording ? (
+            <>
+              <Square size={15} />
+              <span className="hidden sm:inline">
+                Stop Recording
+              </span>
+            </>
+          ) : (
+            <>
+              <CircleDot size={18} className="text-[var(--error)]" />
+              <span className="hidden sm:inline">
+                Record
+              </span>
+            </>
+          )}
+        </button>
 
         <button
           type="button"
