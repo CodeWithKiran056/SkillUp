@@ -395,3 +395,13 @@ Security
 Cloud-service credentials and AI-provider keys remain server-side.
 Cloudinary recording storage reuses the existing server-side Cloudinary credentials. No new recording-specific credentials are required.
 
+Project Goal
+
+The goal of SkillUp is to provide students with a single platform where they can:
+Find the right people, create the right study environment, communicate, collaborate, and learn with AI assistance.
+Rather than treating learning as an isolated activity, SkillUp focuses on combining:
+Student Compatibility + Collaboration + Communication + AI-Assisted Learning
+into one practical platform.
+
+📄 License
+This project is currently intended as an academic/project application.
