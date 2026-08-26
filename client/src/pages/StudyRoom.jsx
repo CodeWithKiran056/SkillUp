@@ -25,8 +25,14 @@ function StudyRoom() {
    * Rooms created/joined by OTHER students.
    * Used only for discovery ("Request to Join") -
    * never shown as the user's own rooms.
+   *
+   * LAZY: discovery is NOT fetched or rendered on page
+   * load. It only loads after the user explicitly clicks
+   * "Find Study Rooms".
    */
   const [discoverRooms, setDiscoverRooms] = useState([]);
+  const [discoverVisible, setDiscoverVisible] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState(null);
 
   const [roomError, setRoomError] = useState("");
@@ -213,6 +219,102 @@ function StudyRoom() {
   }, []);
 
   /*
+   * Check whether a room has a pending join request
+   * from the current user (used for the Request Pending chip)
+   */
+  const roomHasMyPendingRequest = (room) =>
+    (room.pendingRequests || []).some(
+      (request) => {
+        const requestId =
+          request?._id ||
+          request?.id ||
+          request;
+
+        return (
+          normalizeId(requestId) ===
+          normalizeId(currentUserId)
+        );
+      }
+    );
+
+  /*
+   * Load ALL rooms and return only those that are NOT mine.
+   * Called ONLY from the explicit "Find Study Rooms" flow
+   * (and refreshes when discovery is already open).
+   */
+  const loadDiscoverRooms = async (myRooms) => {
+    try {
+      const discoverResponse =
+        await axios.get(`${API_URL}/api/rooms`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+      const mineIds = new Set(
+        myRooms.map((room) =>
+          String(room._id)
+        )
+      );
+
+      return (
+        discoverResponse.data?.rooms || []
+      ).filter(
+        (room) =>
+          !mineIds.has(String(room._id))
+      );
+    } catch {
+      return [];
+    }
+  };
+
+  /*
+   * Explicit discovery trigger ("Find Study Rooms").
+   * Reveals the Discover section and lazily loads it -
+   * never happens automatically on page load.
+   */
+  const handleFindStudyRooms = async () => {
+    setDiscoverVisible(true);
+    setDiscovering(true);
+
+    setTimeout(() => {
+      document
+        .getElementById(
+          "discover-study-rooms"
+        )
+        ?.scrollIntoView({
+          behavior: "smooth",
+        });
+    }, 50);
+
+    const discovered =
+      await loadDiscoverRooms(rooms);
+
+    setDiscoverRooms(discovered);
+
+    const pendingStatus = {};
+
+    [...rooms, ...discovered].forEach(
+      (room) => {
+        if (
+          roomHasMyPendingRequest(room)
+        ) {
+          pendingStatus[
+            room.roomId
+          ] = "pending";
+        }
+      }
+    );
+
+    setRequestStatus((previous) => ({
+      ...previous,
+      ...pendingStatus,
+    }));
+
+    setDiscovering(false);
+  };
+
+  /*
    * Fetch all study rooms
    */
   const fetchRooms = async () => {
@@ -241,42 +343,29 @@ function StudyRoom() {
 
       setRooms(fetchedRooms);
 
-      /* DISCOVERY LIST - all remaining rooms, used for
-         Request to Join. Failures here are non-fatal. */
-      let discovered = [];
+      /*
+       * DISCOVERY IS LAZY. Rooms from other students are
+       * only fetched when discovery is already visible
+       * (i.e. the user clicked "Find Study Rooms" before).
+       * A brand-new user's first page load never fetches
+       * or renders other people's rooms.
+       */
+      let discovered = discoverRooms;
 
-      try {
-        const discoverResponse =
-          await axios.get(`${API_URL}/api/rooms`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-
-        const mineIds = new Set(
-          fetchedRooms.map((room) =>
-            String(room._id)
-          )
-        );
-
-        discovered = (
-          discoverResponse.data?.rooms || []
-        ).filter(
-          (room) =>
-            !mineIds.has(String(room._id))
-        );
-
+      if (discoverVisible) {
+        discovered =
+          await loadDiscoverRooms(
+            fetchedRooms
+          );
         setDiscoverRooms(discovered);
-      } catch {
-        setDiscoverRooms([]);
       }
 
       /*
        * Rebuild pending request state.
        * Pending-only rooms are NOT part of scope=mine,
-       * so check both my rooms and discovery rooms -
-       * this is what shows "Request Pending" in discovery
-       * without ever putting the room into My Rooms.
+       * so check both my rooms and any loaded discovery
+       * rooms - this is what shows "Request Pending" in
+       * discovery without putting the room into My Rooms.
        */
       const pendingStatus = {};
 
@@ -284,25 +373,9 @@ function StudyRoom() {
         ...fetchedRooms,
         ...discovered,
       ].forEach((room) => {
-        const pendingRequests =
-          room.pendingRequests || [];
-
-        const hasRequest =
-          pendingRequests.some(
-            (request) => {
-              const requestId =
-                request?._id ||
-                request?.id ||
-                request;
-
-              return (
-                normalizeId(requestId) ===
-                normalizeId(currentUserId)
-              );
-            }
-          );
-
-        if (hasRequest) {
+        if (
+          roomHasMyPendingRequest(room)
+        ) {
           pendingStatus[
             room.roomId
           ] = "pending";
@@ -976,15 +1049,7 @@ function StudyRoom() {
 
               <button
                 type="button"
-                onClick={() =>
-                  document
-                    .getElementById(
-                      "discover-study-rooms"
-                    )
-                    ?.scrollIntoView({
-                      behavior: "smooth",
-                    })
-                }
+                onClick={handleFindStudyRooms}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-transparent px-5 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
               >
                 <Search size={16} />
@@ -1056,6 +1121,7 @@ function StudyRoom() {
           mixing other users' rooms into My Rooms.
       ========================== */}
 
+      {discoverVisible && (
       <section
         id="discover-study-rooms"
         className="mt-12"
@@ -1076,7 +1142,11 @@ function StudyRoom() {
           and send a join request.
         </p>
 
-        {discoverRooms.length === 0 ? (
+        {discovering ? (
+          <p className="mt-5 text-sm text-[var(--text-secondary)]">
+            Loading study rooms...
+          </p>
+        ) : discoverRooms.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-1)] p-8 text-center">
             <p className="text-sm text-[var(--text-secondary)]">
               No other study rooms to discover yet.
@@ -1115,6 +1185,7 @@ function StudyRoom() {
         )}
 
       </section>
+      )}
 
       {/* =========================
           CREATE ROOM
