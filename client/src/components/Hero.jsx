@@ -203,6 +203,14 @@ Get Started
 
 variant="secondary"
 
+/* No demo video exists yet - the button stays visually
+   consistent but is intentionally non-functional until
+   the real demo is created. The tooltip explains why. */
+
+disabled
+
+title="Demo coming soon"
+
 className="
 flex
 items-center

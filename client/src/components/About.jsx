@@ -174,12 +174,22 @@ function About() {
 
 
           <Button
+
+            onClick={() =>
+              document
+                .getElementById("features")
+                ?.scrollIntoView({
+                  behavior: "smooth",
+                })
+            }
+
             className="
             mt-10
             flex
             items-center
             gap-2
             "
+
           >
 
             Explore Platform
