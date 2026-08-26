@@ -42,12 +42,39 @@ const app = express();
 const server = http.createServer(app);
 
 // =========================================
+// CORS CONFIGURATION
+//
+// Allowed origins:
+//   - process.env.CLIENT_URL  -> production frontend on Render
+//                                (https://skillup-frontend-up4n.onrender.com)
+//   - http://localhost:5173   -> kept so local Vite development still works
+//
+// Shared by BOTH the Express CORS middleware and the Socket.IO server below.
+// =========================================
+
+const allowedOrigins = [
+    process.env.CLIENT_URL,
+    "http://localhost:5173",
+].filter(Boolean);
+
+/**
+ * Dynamic origin check. Requests without an Origin header
+ * (curl, Postman, same-origin calls) are always allowed.
+ */
+const corsOrigin = (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+    }
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+};
+
+// =========================================
 // SOCKET.IO
 // =========================================
 
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173",
+        origin: corsOrigin,
         methods: ["GET", "POST"],
         credentials: true,
     },
@@ -65,7 +92,7 @@ connectDB();
 
 app.use(
     cors({
-        origin: "http://localhost:5173",
+        origin: corsOrigin,
         credentials: true,
     })
 );
