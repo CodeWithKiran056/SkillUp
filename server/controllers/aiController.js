@@ -251,14 +251,60 @@ Question: ${finalMessage}`;
 
     catch (error) {
 
-        console.log(
+        /* Full detail goes to SERVER LOGS ONLY (visible in Render logs).
+           Never exposes API keys or raw provider payloads to the client. */
+        console.error(
             "AI Controller Error:",
-            error.message
+            error?.response?.status || "",
+            error?.response?.data
+                ? JSON.stringify(error.response.data)
+                : error.message
         );
+
+        /* Safe, human-readable reason forwarded to the frontend so the
+           EDITH UI can show what actually went wrong while debugging. */
+        let message = "AI response failed";
+
+        if (!process.env.NVIDIA_API_KEY) {
+
+            message = "AI service is not configured on the server (missing API key)";
+
+        } else if (error?.code === "ECONNABORTED") {
+
+            message = "AI provider timed out";
+
+        } else if (
+            error?.response?.status === 401 ||
+            error?.response?.status === 403
+        ) {
+
+            message = "AI provider rejected the configured API key";
+
+        } else if (error?.response?.status === 404) {
+
+            message = "AI model is currently unavailable (model not found)";
+
+        } else if (error?.response?.status === 410) {
+
+            message = "AI model has been retired by the provider";
+
+        } else if (error?.response?.status === 429) {
+
+            message = "AI provider rate limit reached, please try again shortly";
+
+        } else if (error?.response?.data?.detail) {
+
+            message = String(error.response.data.detail).slice(0, 200);
+
+        } else if (!error?.response && error?.message) {
+
+            message = `Could not reach the AI provider (${error.message})`;
+
+        }
 
         res.status(500).json({
             success: false,
-            message: "AI response failed"
+            message
         });
 
     }

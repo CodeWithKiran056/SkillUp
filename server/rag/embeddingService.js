@@ -14,7 +14,7 @@ const response = await axios.post(
 
 {
 
-model:"nvidia/nv-embedqa-e5-v5",
+model:"nvidia/nemotron-3-embed-1b",
 
 
 input:text,

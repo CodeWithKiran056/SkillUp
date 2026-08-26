@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { Bell, X, Video, Plus, MessageCircle } from "lucide-react";
+import {
+  Bell,
+  X,
+  Video,
+  Plus,
+  MessageCircle,
+  Search,
+  Users,
+} from "lucide-react";
 
 import ChatRoom from "../components/ChatRoom";
 import VideoCall from "../components/VideoCall";
@@ -12,7 +20,15 @@ import { API_URL } from "../config/api";
 
 function StudyRoom() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
+
+  /*
+   * Rooms created/joined by OTHER students.
+   * Used only for discovery ("Request to Join") -
+   * never shown as the user's own rooms.
+   */
+  const [discoverRooms, setDiscoverRooms] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
 
   const [roomError, setRoomError] = useState("");
@@ -210,8 +226,10 @@ function StudyRoom() {
     }
 
     try {
+      /* MY ROOMS ONLY - server-side filtered with the JWT user
+         (rooms I created, I am a member of, or requested to join). */
       const response = await axios.get(
-        `${API_URL}/api/rooms`,
+        `${API_URL}/api/rooms?scope=mine`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -223,6 +241,34 @@ function StudyRoom() {
         response.data?.rooms || [];
 
       setRooms(fetchedRooms);
+
+      /* DISCOVERY LIST - all remaining rooms, used for
+         Request to Join. Failures here are non-fatal. */
+      try {
+        const discoverResponse =
+          await axios.get(`${API_URL}/api/rooms`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+        const mineIds = new Set(
+          fetchedRooms.map((room) =>
+            String(room._id)
+          )
+        );
+
+        setDiscoverRooms(
+          (
+            discoverResponse.data?.rooms || []
+          ).filter(
+            (room) =>
+              !mineIds.has(String(room._id))
+          )
+        );
+      } catch {
+        setDiscoverRooms([]);
+      }
 
       /*
        * Rebuild pending request state
@@ -404,10 +450,11 @@ function StudyRoom() {
       return;
     }
 
-    const room = rooms.find(
-      (item) =>
-        item.roomId === roomId
-    );
+    const room =
+      rooms.find((item) => item.roomId === roomId) ||
+      discoverRooms.find(
+        (item) => item.roomId === roomId
+      );
 
     if (!room) {
       setRoomError(
@@ -891,13 +938,44 @@ function StudyRoom() {
             </div>
 
             <h3 className="mt-4 text-lg font-semibold">
-              No study rooms yet
+              You don't have any study rooms yet
             </h3>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--text-secondary)]">
-              Create the first study room and
-              start learning collaboratively.
+              Create a study room, invite your
+              friends or find new partners and
+              start learning together.
             </p>
+
+            <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+
+              <button
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById(
+                      "create-study-room"
+                    )
+                    ?.scrollIntoView({
+                      behavior: "smooth",
+                    })
+                }
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]"
+              >
+                <Plus size={17} />
+                + Create Study Room
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate("/find-partner")}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-transparent px-5 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+              >
+                <Users size={16} />
+                Find Study Partner
+              </button>
+
+            </div>
 
           </div>
         ) : (
@@ -956,10 +1034,77 @@ function StudyRoom() {
       </section>
 
       {/* =========================
+          DISCOVER STUDY ROOMS
+          Rooms created by other students.
+          Keeps "Request to Join" working without
+          mixing other users' rooms into My Rooms.
+      ========================== */}
+
+      <section className="mt-12">
+
+        <div className="flex items-center gap-2">
+          <Search
+            size={18}
+            className="text-[var(--accent)]"
+          />
+          <h2 className="text-xl font-bold text-[var(--text-primary)]">
+            Discover Study Rooms
+          </h2>
+        </div>
+
+        <p className="mt-1.5 text-sm text-[var(--text-secondary)]">
+          Browse study rooms created by other students
+          and send a join request.
+        </p>
+
+        {discoverRooms.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-1)] p-8 text-center">
+            <p className="text-sm text-[var(--text-secondary)]">
+              No other study rooms to discover yet.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+
+            {discoverRooms.map((room) => {
+
+              const pending =
+                requestStatus[
+                  room.roomId
+                ] === "pending";
+
+              return (
+                <StudyRoomCard
+                  key={
+                    room._id ||
+                    room.roomId
+                  }
+                  room={room}
+                  isCreator={false}
+                  isMember={false}
+                  isPending={pending}
+                  joinRequests={[]}
+                  loadingRequests={false}
+                  onJoin={joinRoom}
+                  onOpen={() => {}}
+                  onDelete={() => {}}
+                />
+              );
+            })}
+
+          </div>
+        )}
+
+      </section>
+
+      {/* =========================
           CREATE ROOM
       ========================== */}
 
-      <section className="mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-2)] p-6 shadow-[var(--shadow-sm)]">
+      <section
+        id="create-study-room"
+        className="mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-2)] p-6 shadow-[var(--shadow-sm)]"
+      >
 
         <div className="flex items-start gap-3">
 

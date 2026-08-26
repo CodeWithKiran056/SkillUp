@@ -205,7 +205,7 @@ function Messages() {
       setError("");
 
       const response = await axios.get(
-        `${API_URL}/api/rooms`,
+        `${API_URL}/api/rooms?scope=mine`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

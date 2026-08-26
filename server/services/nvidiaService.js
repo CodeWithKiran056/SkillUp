@@ -22,7 +22,7 @@ const model = isVision
 
 ? "meta/llama-3.2-11b-vision-instruct"
 
-: "meta/llama-3.1-8b-instruct";
+: "openai/gpt-oss-20b";
 
 
 
