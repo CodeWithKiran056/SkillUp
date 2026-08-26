@@ -4,7 +4,7 @@ import PartnerCard from "./PartnerCard";
 import PartnerProfileModal from "./PartnerProfileModal";
 import ConnectionRequests from "./ConnectionRequests";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../../config/api";
 
 function PartnerGrid({ search, activeFilter }) {
   const [partners, setPartners] = useState([]);

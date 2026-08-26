@@ -8,7 +8,7 @@ import VideoCall from "../components/VideoCall";
 import StudyRoomCard from "../components/studyroom/StudyRoomCard";
 import socket from "../socket/socket";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../config/api";
 
 function StudyRoom() {
   const [searchParams] = useSearchParams();

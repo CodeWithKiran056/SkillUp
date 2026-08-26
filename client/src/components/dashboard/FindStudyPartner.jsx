@@ -12,7 +12,7 @@ import {
 import { motion } from "framer-motion";
 import { Badge, Button } from "../ui";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../../config/api";
 
 /* =============================================================
    Find Your Study Partner

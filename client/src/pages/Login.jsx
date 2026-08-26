@@ -9,6 +9,7 @@ import {
   saveToken,
   saveUser,
 } from "../utils/auth";
+import { API_URL } from "../config/api";
 
 function Login() {
   const navigate = useNavigate();
@@ -49,7 +50,7 @@ function Login() {
       clearAuth();
 
       const response = await axios.post(
-        "http://localhost:5000/api/auth/login",
+        `${API_URL}/api/auth/login`,
         {
           email: cleanEmail,
           password,

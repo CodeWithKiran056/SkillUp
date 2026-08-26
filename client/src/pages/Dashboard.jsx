@@ -10,6 +10,7 @@ import StudyPartners from "../components/dashboard/StudyPartners";
 import RecentActivity from "../components/dashboard/RecentActivity";
 
 import { getUser } from "../utils/auth";
+import { API_URL } from "../config/api";
 
 function Dashboard() {
   const user = getUser();
@@ -21,7 +22,6 @@ function Dashboard() {
      Analytics page (same endpoint, same logic).
      0 = real measured zero once rooms are loaded.
      ========================================== */
-  const API_URL = "http://localhost:5000";
   const token = localStorage.getItem("token");
   const currentUserId =
     user?.id || user?._id || "";

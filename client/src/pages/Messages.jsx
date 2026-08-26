@@ -19,7 +19,7 @@ import DirectMessageList from "../components/messages/DirectMessageList";
 import ChatRoom from "../components/ChatRoom";
 import socket from "../socket/socket";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../config/api";
 
 const normalizeId = (id) => {
   if (!id) return "";
@@ -550,8 +550,6 @@ function DirectMessageChat({
   backAction,
   onMessagesChanged,
 }) {
-  const API_URL = "http://localhost:5000";
-
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);

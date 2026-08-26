@@ -17,7 +17,7 @@ import axios from "axios";
 import StatsCards from "../components/dashboard/StatsCards";
 import ProgressChart from "../components/dashboard/ProgressChart";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../config/api";
 
 function Analytics() {
   const [rooms, setRooms] = useState([]);

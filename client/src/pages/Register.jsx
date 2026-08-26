@@ -9,6 +9,7 @@ import {
 import axios from "axios";
 
 import Button from "../components/Button";
+import { API_URL } from "../config/api";
 import {
   clearAuth,
   saveToken,
@@ -187,7 +188,7 @@ function Register() {
        * the server — never from a stale local object.
        */
       const response = await axios.post(
-        "http://localhost:5000/api/auth/register",
+        `${API_URL}/api/auth/register`,
         {
           name: `${form.firstName} ${form.lastName}`.trim(),
           email: form.email,

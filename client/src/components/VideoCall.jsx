@@ -21,7 +21,7 @@ import axios from "axios";
 import socket from "../socket/socket";
 import { getToken } from "../utils/auth";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../config/api";
 
 const ICE_SERVERS = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],

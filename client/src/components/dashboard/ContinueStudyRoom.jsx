@@ -14,7 +14,7 @@ import { motion } from "framer-motion";
 import { Button } from "../ui";
 import { getToken, getCurrentUserId } from "../../utils/auth";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../../config/api";
 
 /* =============================================================
    Continue Study Room

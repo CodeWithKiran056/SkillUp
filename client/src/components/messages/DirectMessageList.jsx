@@ -1,4 +1,5 @@
 import { Search, User } from "lucide-react";
+import { API_URL } from "../../config/api";
 
 const formatLastTime = (dateString) => {
   if (!dateString) return "";
@@ -99,7 +100,7 @@ function DirectMessageList({
                           "http"
                         )
                           ? conversation.partner.profileImage
-                          : `http://localhost:5000${conversation.partner.profileImage}`
+                          : `${API_URL}${conversation.partner.profileImage}`
                       }
                       alt={conversation.partner.name}
                       className="h-11 w-11 shrink-0 rounded-xl object-cover"

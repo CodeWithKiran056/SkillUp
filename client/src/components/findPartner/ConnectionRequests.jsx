@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { UserCheck, UserX } from "lucide-react";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../../config/api";
 
 /* Normalize real profile image URLs only (same rule as PartnerGrid). */
 const resolveImage = (rawImage) => {

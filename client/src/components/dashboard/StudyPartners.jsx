@@ -9,7 +9,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../../config/api";
 
 /**
  * StudyPartners

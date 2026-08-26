@@ -5,6 +5,7 @@ import jsPDF from "jspdf";
 
 import EdithDiagram from "../components/EdithDiagram";
 import { getToken } from "../utils/auth";
+import { API_URL } from "../config/api";
 
 import {
   Send,
@@ -215,7 +216,7 @@ file
 
 const response = await axios.post(
 
-"http://localhost:5000/api/ai/chat",
+`${API_URL}/api/ai/chat`,
 
 formData,
 

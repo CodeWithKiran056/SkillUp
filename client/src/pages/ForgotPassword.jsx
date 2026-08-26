@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Mail, CheckCircle } from "lucide-react";
 import axios from "axios";
 import Button from "../components/Button";
+import { API_URL } from "../config/api";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -35,7 +36,7 @@ function ForgotPassword() {
       setLoading(true);
 
       const response = await axios.post(
-        "http://localhost:5000/api/auth/forgot-password",
+        `${API_URL}/api/auth/forgot-password`,
         {
           email: cleanEmail,
         }

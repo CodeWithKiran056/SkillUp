@@ -14,7 +14,7 @@ import {
 
 import { getToken, getUser, saveUser } from "../utils/auth";
 
-const API_URL = "http://localhost:5000";
+import { API_URL } from "../config/api";
 
 /* =============================================================
    ChipEditor - add/remove tag editor for skills, interests

@@ -1,8 +1,8 @@
 import { io } from "socket.io-client";
-
+import { API_URL } from "../config/api";
 
 const socket = io(
-    "http://localhost:5000",
+    API_URL,
     {
         transports:["websocket"]
     }
