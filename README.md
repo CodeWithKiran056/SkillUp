@@ -91,8 +91,20 @@ Current functionality includes:
 - Join and leave calls
 - Reconnection handling
 - Screen sharing
+- Study session recording
+- Records the active call using the browser's native MediaRecorder API
+- Requires an explicit user action (clicking **Record**)
+- Shows a visible **● REC** indicator with a live timer while recording
+- Saved securely to Cloudinary and linked to the study session in MongoDB
+- Recorded sessions can be replayed from the study room's video-call UI
+  (a "Session Recordings" list uses the browser's HTML5 video player)
 
 Camera, microphone, and screen sharing require the appropriate browser permissions.
+
+> **Recording privacy:** recording only starts when a participant explicitly clicks
+> **Record**, and a red recording indicator is always visible while a recording is
+> active. Recordings are uploaded to the authenticated backend and are only
+> accessible to members of the study session.
 
 ### 🤖 EDITH AI
 
@@ -184,9 +196,14 @@ Email changing is currently read-only because a verified email-change workflow h
 
 ### Cloud Services
 
-- Cloudinary for profile image hosting
-- MongoDB for application data
+- Cloudinary for profile image hosting and study session recordings
+- MongoDB for application data (including recording metadata)
 - Email service for authentication-related emails
+
+Server-side environment variables for recording storage reuse the existing
+Cloudinary credentials (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`,
+`CLOUDINARY_API_SECRET`). No new credentials are required; Cloudinary secrets
+never leave the server.
 
 ---
 

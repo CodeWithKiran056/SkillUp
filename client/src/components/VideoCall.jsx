@@ -12,13 +12,25 @@ import {
   Square,
   Users,
   Wifi,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import axios from "axios";
 import socket from "../socket/socket";
+import { getToken } from "../utils/auth";
+
+const API_URL = "http://localhost:5000";
 
 const ICE_SERVERS = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
+
+// Timestamps are only ever created from event/async callbacks
+// (never during a render pass), so they go through a small
+// module-scope helper instead of calling Date.now inline.
+const getNow = () => Date.now();
 
 function VideoCall({ roomId, userName = "You" }) {
   const localVideoRef = useRef(null);
@@ -43,6 +55,13 @@ function VideoCall({ roomId, userName = "You" }) {
   const recordingStreamRef = useRef(null);
   const recordingTimerRef = useRef(null);
   const recordingStartRef = useRef(0);
+
+  // Recording persistence state
+  // "idle" | "saving" | "saved" | "failed"
+  const [recordingStatus, setRecordingStatus] =
+    useState("idle");
+  const [roomRecordings, setRoomRecordings] = useState([]);
+  const pendingRecordingRef = useRef(null);
 
   const buildRecordingStream = () => {
     const streams = [
@@ -84,6 +103,16 @@ function VideoCall({ roomId, userName = "You" }) {
 
     return `SkillUp-StudySession-${datePart}.${extension}`;
   };
+
+  // MediaRecorder's mimeType often includes codec parameters, e.g.
+  // "video/webm;codecs=vp9,opus". For the upload FormData part we must
+  // send a clean base MIME - some multipart parsers drop the whole
+  // value when it carries parameters.
+  const getBaseMimeType = (mimeType) =>
+    String(mimeType || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
 
   const finalizeRecording = () => {
     if (recordingTimerRef.current) {
@@ -150,10 +179,19 @@ function VideoCall({ roomId, userName = "You" }) {
       };
 
       recorder.onstop = () => {
+        const duration = Math.max(
+          1,
+          Math.round(
+            (getNow() - recordingStartRef.current) / 1000
+          )
+        );
+
         finalizeRecording();
 
         const recordingBlob = new Blob(recordedChunksRef.current, {
-          type: recorder.mimeType || "video/webm",
+          // Send a clean base MIME (no codec parameters) so the server
+          // can validate and ingest the container type reliably.
+          type: getBaseMimeType(recorder.mimeType) || "video/webm",
         });
 
         recordedChunksRef.current = [];
@@ -165,31 +203,23 @@ function VideoCall({ roomId, userName = "You" }) {
           return;
         }
 
-        const downloadUrl = URL.createObjectURL(recordingBlob);
-
-        const downloadLink = document.createElement("a");
-
-        downloadLink.href = downloadUrl;
-        downloadLink.download = generateRecordingFilename(recordingBlob.type);
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        downloadLink.remove();
-
-        setTimeout(() => {
-          URL.revokeObjectURL(downloadUrl);
-        }, 1000);
+        saveRecording(
+          recordingBlob,
+          recordingBlob.type || "video/webm",
+          duration
+        );
       };
 
       recorder.start(1000);
 
-      recordingStartRef.current = Date.now();
+      recordingStartRef.current = getNow();
       setError("");
       setRecordingTime(0);
       setIsRecording(true);
 
       recordingTimerRef.current = setInterval(() => {
         setRecordingTime(
-          Math.floor((Date.now() - recordingStartRef.current) / 1000)
+          Math.floor((getNow() - recordingStartRef.current) / 1000)
         );
       }, 1000);
     } catch (err) {
@@ -215,6 +245,108 @@ function VideoCall({ roomId, userName = "You" }) {
       console.error("Stop recording error:", err);
       finalizeRecording();
     }
+  };
+
+  const fetchRoomRecordings = async () => {
+    if (!roomId) return;
+
+    const token = getToken();
+
+    if (!token) return;
+
+    try {
+      const { data } = await axios.get(
+        `${API_URL}/api/recordings/${roomId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      setRoomRecordings(data?.recordings || []);
+    } catch (err) {
+      console.error(
+        "Load recordings error:",
+        err.response?.data || err.message
+      );
+    }
+  };
+
+  // Uploads the recording Blob to the backend, which stores it
+  // securely on Cloudinary and saves the reference in MongoDB.
+  // The Blob is reused from the live call streams - no new capture.
+  const saveRecording = async (blob, mimeType, duration = 0) => {
+    const token = getToken();
+
+    if (!token) {
+      pendingRecordingRef.current = { blob, mimeType, duration };
+      setRecordingStatus("failed");
+      return;
+    }
+
+    pendingRecordingRef.current = { blob, mimeType, duration };
+    setError("");
+    setRecordingStatus("saving");
+
+    try {
+      const formData = new FormData();
+
+      formData.append("recording", blob, generateRecordingFilename(mimeType));
+      formData.append("roomId", roomId || "");
+      formData.append("duration", String(Math.max(0, duration)));
+
+      const { data } = await axios.post(
+        `${API_URL}/api/recordings`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      if (!data?.success) {
+        throw new Error("Recording could not be saved.");
+      }
+
+      pendingRecordingRef.current = null;
+      setRecordingStatus("saved");
+      setError("");
+
+      // Refresh the room's recording list (includes the new one),
+      // then collapse the success message again.
+      fetchRoomRecordings();
+
+      setTimeout(() => {
+        setRecordingStatus((current) =>
+          current === "saved" ? "idle" : current
+        );
+      }, 3000);
+    } catch (err) {
+      console.error(
+        "Recording upload error:",
+        err.response?.data || err.message
+      );
+
+      // Blob stays in pendingRecordingRef for a same-session retry.
+      // The inline panel surfaces the failure (with a Retry action);
+      // the generic error banner is left untouched.
+      setRecordingStatus("failed");
+    }
+  };
+
+  const retrySaveRecording = () => {
+    const pending = pendingRecordingRef.current;
+
+    if (!pending) return;
+
+    saveRecording(
+      pending.blob,
+      pending.mimeType,
+      pending.duration
+    );
   };
 
   const createPeerConnection = (targetSocketId, shouldCreateOffer) => {
@@ -470,6 +602,19 @@ function VideoCall({ roomId, userName = "You" }) {
     };
   }, [roomId]);
 
+  // Load this room's saved recordings so they are reachable
+  // from the existing video-call UI. Matches the one-time
+  // room data load pattern used elsewhere in the app.
+  useEffect(() => {
+    // set-state-in-effect suppressed: mirrors the existing
+    // one-time room data loads (e.g. StudyRoom/StudyPartners).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchRoomRecordings();
+    // fetchRoomRecordings is recreated per-render; running
+    // this effect only on roomId change is intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
   const toggleMicrophone = () => {
     const stream = localStreamRef.current;
 
@@ -689,6 +834,63 @@ function VideoCall({ roomId, userName = "You" }) {
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--error)]" />
             </span>
             REC · {formatRecordingTime(recordingTime)}
+          </div>
+        )}
+
+        {/* Recording status + saved playback */}
+        {(recordingStatus !== "idle" ||
+          roomRecordings.length > 0) && (
+          <div className="absolute left-3 top-32 z-30 flex w-72 max-w-[calc(100%-24px)] flex-col gap-3 rounded-lg border border-white/10 bg-black/85 p-3 text-white backdrop-blur-md">
+            {recordingStatus === "saving" && (
+              <p className="flex items-center gap-2 text-xs text-white/80">
+                <Loader2 size={13} className="animate-spin" />
+                Saving recording...
+              </p>
+            )}
+
+            {recordingStatus === "saved" && (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--success)]">
+                <CheckCircle size={13} />
+                Recording saved
+              </p>
+            )}
+
+            {recordingStatus === "failed" && (
+              <div className="text-xs">
+                <p className="flex items-center gap-1.5 text-[var(--error)]">
+                  <AlertCircle size={13} />
+                  Recording could not be saved.
+                </p>
+                <button
+                  type="button"
+                  onClick={retrySaveRecording}
+                  className="mt-2 rounded-md bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/15"
+                >
+                  Retry Save
+                </button>
+              </div>
+            )}
+
+            {roomRecordings.length > 0 && (
+              <div className="border-t border-white/10 pt-2">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-white/55">
+                  Session Recordings
+                </p>
+
+                <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                  {roomRecordings.map((recording) => (
+                    <video
+                      key={recording._id}
+                      src={recording.recordingUrl}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="w-full rounded-md bg-black"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div

@@ -24,6 +24,7 @@ const messageRoutes = require("./routes/messageRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const conversationRoutes = require("./routes/conversationRoutes");
+const recordingRoutes = require("./routes/recordingRoutes");
 
 // =========================================
 // SOCKETS
@@ -90,6 +91,8 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/rooms", roomRoutes);
 
 app.use("/api/conversations", conversationRoutes);
+
+app.use("/api/recordings", recordingRoutes);
 
 app.use("/api/ai", aiRoutes);
 
