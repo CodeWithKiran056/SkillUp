@@ -223,6 +223,18 @@ function StudyRoomCard({
 
             </div>
 
+            {/* Open - creator always has direct access to the room */}
+            <button
+              type="button"
+              onClick={() =>
+                onOpen(room)
+              }
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-1)] py-3 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--text-primary)]"
+            >
+              <MessageCircle size={16} />
+              Open Study Room
+            </button>
+
             {/* Delete */}
             <button
               type="button"

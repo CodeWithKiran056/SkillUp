@@ -124,6 +124,23 @@ const videoSocket = (io) => {
             }
         );
 
+        // Media state (camera / microphone toggles) relay
+        socket.on(
+            "mediaState",
+            ({ target, cameraEnabled, micEnabled }) => {
+                if (!target) return;
+
+                io.to(target).emit(
+                    "mediaState",
+                    {
+                        sender: socket.id,
+                        cameraEnabled: Boolean(cameraEnabled),
+                        micEnabled: Boolean(micEnabled),
+                    }
+                );
+            }
+        );
+
         // Leave Video Room
         socket.on(
             "leaveVideoRoom",
@@ -140,6 +157,17 @@ const videoSocket = (io) => {
                 );
             }
         );
+
+        // Notify video-room peers when a socket leaves WITHOUT an explicit
+        // leaveVideoRoom event (tab close, refresh, or network drop) so the
+        // other side releases the peer connection promptly.
+        socket.on("disconnecting", () => {
+            for (const roomId of socket.rooms) {
+                if (roomId === socket.id) continue;
+
+                socket.to(roomId).emit("userLeft", socket.id);
+            }
+        });
 
         // Disconnect
         socket.on(

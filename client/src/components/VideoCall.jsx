@@ -40,7 +40,19 @@ function VideoCall({ roomId, userName = "You" }) {
   const peerConnectionsRef = useRef({});
   const remoteStreamsRef = useRef({});
 
+  // Per-peer perfect-negotiation state (offer / answer collision handling).
+  const peerStatesRef = useRef({});
+  // Active screen-share video track so it can always be stopped & detached.
+  const screenTrackRef = useRef(null);
+  // socketId -> { cameraEnabled, micEnabled } as reported by remote peers.
+  const remoteMediaStateRef = useRef({});
+
   const [remoteStreams, setRemoteStreams] = useState([]);
+  // Remote peers' camera/mic toggles (driven by the "mediaState" socket event).
+  const [mediaStateByPeer, setMediaStateByPeer] = useState({});
+  // Bumping this value tears down and re-runs the entire join/connect flow
+  // (used by the Rejoin control after a user leaves the video room).
+  const [attempt, setAttempt] = useState(0);
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
@@ -349,14 +361,133 @@ function VideoCall({ roomId, userName = "You" }) {
     );
   };
 
-  const createPeerConnection = (targetSocketId, shouldCreateOffer) => {
-    if (peerConnectionsRef.current[targetSocketId]) {
-      return peerConnectionsRef.current[targetSocketId];
+  const sendLocalMediaState = (cameraEnabledNow, micEnabledNow) => {
+    Object.keys(peerConnectionsRef.current).forEach((target) => {
+      socket.emit("mediaState", {
+        target,
+        cameraEnabled: cameraEnabledNow,
+        micEnabled: micEnabledNow,
+      });
+    });
+  };
+
+  const flushPendingCandidates = async (targetSocketId) => {
+    const state = peerStatesRef.current[targetSocketId];
+    const peer = peerConnectionsRef.current[targetSocketId];
+
+    if (!state || !peer) return;
+
+    const queued = state.pendingCandidates;
+    state.pendingCandidates = [];
+
+    for (const candidate of queued) {
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        if (!state.ignoreOffer) {
+          console.error("ICE candidate error:", err);
+        }
+      }
+    }
+  };
+
+  const addIceCandidateForPeer = async (targetSocketId, candidate) => {
+    const peer = peerConnectionsRef.current[targetSocketId];
+    const state = peerStatesRef.current[targetSocketId];
+
+    if (!peer || !state || !candidate) return;
+
+    // addIceCandidate() rejects until the remote description has been set,
+    // so queue any candidate that arrives during the offer/answer handshake.
+    if (!peer.remoteDescription) {
+      state.pendingCandidates.push(candidate);
+      return;
+    }
+
+    try {
+      await peer.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      if (!state.ignoreOffer) {
+        console.error("ICE candidate error:", err);
+      }
+    }
+  };
+
+  const negotiate = async (targetSocketId) => {
+    const peer = peerConnectionsRef.current[targetSocketId];
+    const state = peerStatesRef.current[targetSocketId];
+
+    if (!peer || !state || state.makingOffer) return;
+    if (peer.connectionState === "connected") return;
+    if (peer.signalingState !== "stable") return;
+
+    try {
+      state.makingOffer = true;
+
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+
+      socket.emit("offer", {
+        target: targetSocketId,
+        offer: peer.localDescription,
+      });
+    } catch (err) {
+      console.error("Offer creation error:", err);
+    } finally {
+      state.makingOffer = false;
+    }
+  };
+
+  // Fallback: if the participant that was expected to offer never does
+  // (e.g. it missed the join event), promote this peer to offering.
+  const scheduleNegotiation = (targetSocketId, delay = 1500) => {
+    const state = peerStatesRef.current[targetSocketId];
+
+    if (!state) return;
+
+    state.timers.push(
+      window.setTimeout(() => {
+        const peer = peerConnectionsRef.current[targetSocketId];
+
+        // Only initiate as a fallback when we have NOT yet received the
+        // other side's offer/answer (avoids a spurious renegotiation once
+        // the handshake already started).
+        if (
+          !peer ||
+          peer.connectionState === "connected" ||
+          peer.remoteDescription
+        ) {
+          return;
+        }
+
+        state.allowOffer = true;
+        negotiate(targetSocketId);
+      }, delay)
+    );
+  };
+
+  const createPeerConnection = (targetSocketId, isPolite) => {
+    const existing = peerConnectionsRef.current[targetSocketId];
+
+    // Never create a second RTCPeerConnection for the same participant.
+    if (existing) {
+      return existing;
     }
 
     const peer = new RTCPeerConnection(ICE_SERVERS);
 
     peerConnectionsRef.current[targetSocketId] = peer;
+
+    peerStatesRef.current[targetSocketId] = {
+      isPolite,
+      // Polite participants wait for the other side's first offer; the
+      // impolite (already-present) participant starts the handshake.
+      allowOffer: !isPolite,
+      makingOffer: false,
+      ignoreOffer: false,
+      pendingCandidates: [],
+      timers: [],
+    };
 
     const localStream = localStreamRef.current;
 
@@ -373,6 +504,16 @@ function VideoCall({ roomId, userName = "You" }) {
         target: targetSocketId,
         candidate: event.candidate,
       });
+    };
+
+    // Perfect-negotiation entry point. Only fires after the initial
+    // handshake (or a started-offering timeout) on either side.
+    peer.onnegotiationneeded = () => {
+      const state = peerStatesRef.current[targetSocketId];
+
+      if (!state?.allowOffer) return;
+
+      negotiate(targetSocketId);
     };
 
     peer.ontrack = (event) => {
@@ -406,7 +547,14 @@ function VideoCall({ roomId, userName = "You" }) {
     };
 
     peer.onconnectionstatechange = () => {
-      if (
+      const state = peerStatesRef.current[targetSocketId];
+
+      if (peer.connectionState === "connected") {
+        if (state) {
+          state.timers.forEach((timer) => window.clearTimeout(timer));
+          state.timers = [];
+        }
+      } else if (
         peer.connectionState === "failed" ||
         peer.connectionState === "closed"
       ) {
@@ -414,19 +562,8 @@ function VideoCall({ roomId, userName = "You" }) {
       }
     };
 
-    if (shouldCreateOffer) {
-      peer
-        .createOffer()
-        .then((offer) => peer.setLocalDescription(offer))
-        .then(() => {
-          socket.emit("offer", {
-            target: targetSocketId,
-            offer: peer.localDescription,
-          });
-        })
-        .catch((err) => {
-          console.error("Offer error:", err);
-        });
+    if (isPolite) {
+      scheduleNegotiation(targetSocketId);
     }
 
     return peer;
@@ -434,13 +571,26 @@ function VideoCall({ roomId, userName = "You" }) {
 
   const removePeer = (socketId) => {
     const peer = peerConnectionsRef.current[socketId];
+    const state = peerStatesRef.current[socketId];
+
+    if (state) {
+      state.timers.forEach((timer) => window.clearTimeout(timer));
+    }
 
     if (peer) {
       peer.close();
       delete peerConnectionsRef.current[socketId];
     }
 
+    delete peerStatesRef.current[socketId];
     delete remoteStreamsRef.current[socketId];
+    delete remoteMediaStateRef.current[socketId];
+
+    setMediaStateByPeer((prev) => {
+      const next = { ...prev };
+      delete next[socketId];
+      return next;
+    });
 
     setRemoteStreams((prev) =>
       prev.filter((item) => item.id !== socketId)
@@ -452,14 +602,90 @@ function VideoCall({ roomId, userName = "You" }) {
 
     let mounted = true;
 
-    const startCamera = async () => {
-      try {
-        setError("");
+    // Captured once so the cleanup function can always clear the preview
+    // element without reading a live ref during unmount.
+    const localVideoElement = localVideoRef.current;
 
-        const stream = await navigator.mediaDevices.getUserMedia({
+    const friendlyMediaError = (err, kind) => {
+      const name = err?.name || "";
+
+      if (/NotFoundError|DevicesNotFoundError/.test(name)) {
+        return kind === "audio"
+          ? "No microphone was found on this device."
+          : "No camera was found on this device.";
+      }
+
+      if (/NotAllowedError|PermissionDeniedError|SecurityError/.test(name)) {
+        return kind === "audio"
+          ? "Microphone access was denied. Allow it in your browser settings to talk."
+          : "Camera access was denied. Allow it in your browser settings to share video.";
+      }
+
+      if (/NotReadableError|AbortError|TrackStartError/.test(name)) {
+        return kind === "audio"
+          ? "Microphone is busy or cannot be started right now."
+          : "Camera is busy or cannot be started right now.";
+      }
+
+      return kind === "audio"
+        ? "Unable to access the microphone."
+        : "Unable to access the camera.";
+    };
+
+    const acquireMedia = async () => {
+      // Single stream shared by the local preview and every peer connection.
+      const combinedStream = new MediaStream();
+      const issues = [];
+
+      // Try the normal combined request first (one browser permission prompt).
+      try {
+        const both = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
+
+        both.getTracks().forEach((track) =>
+          combinedStream.addTrack(track)
+        );
+
+        return { stream: combinedStream, issues };
+      } catch {
+        // Fall through and request camera / microphone independently so a
+        // denied or missing device never blocks the other one.
+      }
+
+      try {
+        const cameraOnly = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+
+        cameraOnly.getVideoTracks().forEach((track) =>
+          combinedStream.addTrack(track)
+        );
+      } catch (err) {
+        issues.push(friendlyMediaError(err, "video"));
+      }
+
+      try {
+        const audioOnly = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        });
+
+        audioOnly.getAudioTracks().forEach((track) =>
+          combinedStream.addTrack(track)
+        );
+      } catch (err) {
+        issues.push(friendlyMediaError(err, "audio"));
+      }
+
+      return { stream: combinedStream, issues };
+    };
+
+    const startCamera = async () => {
+      try {
+        const { stream, issues } = await acquireMedia();
 
         if (!mounted) {
           stream.getTracks().forEach((track) => track.stop());
@@ -468,47 +694,104 @@ function VideoCall({ roomId, userName = "You" }) {
 
         localStreamRef.current = stream;
 
-        if (localVideoRef.current) {
+        const hasVideo = stream.getVideoTracks().length > 0;
+        const hasAudio = stream.getAudioTracks().length > 0;
+
+        setCameraEnabled(hasVideo);
+        setMicEnabled(hasAudio);
+
+        if (hasVideo && localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
+
+        const uniqueIssues = [...new Set(issues)];
+
+        setError(uniqueIssues.join(" "));
 
         socket.emit("joinVideoRoom", roomId);
         setJoined(true);
       } catch (err) {
         console.error("Camera/Microphone error:", err);
 
-        setError(
-          "Camera or microphone permission is required to join the video room."
-        );
+        if (mounted) {
+          setError(
+            "Unable to access camera or microphone. Check device permissions and try again."
+          );
+        }
       }
     };
 
+    const emitMyMediaState = (targetSocketId) => {
+      const stream = localStreamRef.current;
+
+      const cameraEnabledNow =
+        stream?.getVideoTracks().some((track) => track.enabled) ?? true;
+      const micEnabledNow =
+        stream?.getAudioTracks().some((track) => track.enabled) ?? true;
+
+      socket.emit("mediaState", {
+        target: targetSocketId,
+        cameraEnabled: cameraEnabledNow,
+        micEnabled: micEnabledNow,
+      });
+    };
+
     const handleExistingUsers = (users) => {
+      // Already-present participants pre-date us: they are the offerers.
       users.forEach((targetSocketId) => {
         createPeerConnection(targetSocketId, true);
+        emitMyMediaState(targetSocketId);
       });
     };
 
     const handleUserJoined = (targetSocketId) => {
-      createPeerConnection(targetSocketId, true);
+      // We were here first: create the peer AND start the handshake.
+      createPeerConnection(targetSocketId, false);
+      emitMyMediaState(targetSocketId);
+      negotiate(targetSocketId);
     };
 
     const handleOffer = async ({ sender, offer }) => {
       try {
-        const peer = createPeerConnection(sender, false);
+        const knownState = peerStatesRef.current[sender];
+        const peer = createPeerConnection(
+          sender,
+          knownState ? knownState.isPolite : false
+        );
+
+        const state = peerStatesRef.current[sender];
+
+        if (!state) return;
+
+        const offerCollision =
+          offer?.type === "offer" &&
+          (state.makingOffer || peer.signalingState !== "stable");
+
+        state.ignoreOffer = !state.isPolite && offerCollision;
+
+        if (state.ignoreOffer) return;
 
         await peer.setRemoteDescription(
           new RTCSessionDescription(offer)
         );
 
-        const answer = await peer.createAnswer();
+        await flushPendingCandidates(sender);
 
-        await peer.setLocalDescription(answer);
+        // Handshake is done; this peer may now also renegotiate on demand.
+        state.allowOffer = true;
 
-        socket.emit("answer", {
-          target: sender,
-          answer,
-        });
+        if (offer?.type === "offer") {
+          const answer = await peer.createAnswer();
+
+          await peer.setLocalDescription(answer);
+
+          socket.emit("answer", {
+            target: sender,
+            answer,
+          });
+        }
+
+        state.ignoreOffer = false;
       } catch (err) {
         console.error("Offer handling error:", err);
       }
@@ -524,31 +807,38 @@ function VideoCall({ roomId, userName = "You" }) {
         await peer.setRemoteDescription(
           new RTCSessionDescription(answer)
         );
+
+        await flushPendingCandidates(sender);
       } catch (err) {
         console.error("Answer handling error:", err);
       }
     };
 
-    const handleIceCandidate = async ({
-      sender,
-      candidate,
-    }) => {
-      try {
-        const peer =
-          peerConnectionsRef.current[sender];
+    const handleIceCandidate = ({ sender, candidate }) => {
+      const peer = peerConnectionsRef.current[sender];
+      const state = peerStatesRef.current[sender];
 
-        if (!peer || !candidate) return;
+      if (!peer || !state || !candidate) return;
 
-        await peer.addIceCandidate(
-          new RTCIceCandidate(candidate)
-        );
-      } catch (err) {
-        console.error("ICE candidate error:", err);
-      }
+      addIceCandidateForPeer(sender, candidate);
     };
 
     const handleUserLeft = (socketId) => {
       removePeer(socketId);
+    };
+
+    const handleMediaState = ({ sender, cameraEnabled, micEnabled }) => {
+      const next = {
+        cameraEnabled: Boolean(cameraEnabled),
+        micEnabled: Boolean(micEnabled),
+      };
+
+      remoteMediaStateRef.current[sender] = next;
+
+      setMediaStateByPeer((prev) => ({
+        ...prev,
+        [sender]: next,
+      }));
     };
 
     socket.on("existingUsers", handleExistingUsers);
@@ -557,6 +847,7 @@ function VideoCall({ roomId, userName = "You" }) {
     socket.on("answer", handleAnswer);
     socket.on("iceCandidate", handleIceCandidate);
     socket.on("userLeft", handleUserLeft);
+    socket.on("mediaState", handleMediaState);
 
     startCamera();
 
@@ -578,6 +869,7 @@ function VideoCall({ roomId, userName = "You" }) {
         handleIceCandidate
       );
       socket.off("userLeft", handleUserLeft);
+      socket.off("mediaState", handleMediaState);
 
       stopRecording();
 
@@ -587,8 +879,16 @@ function VideoCall({ roomId, userName = "You" }) {
         peerConnectionsRef.current
       ).forEach((peer) => peer.close());
 
+      const states = peerStatesRef.current;
+
+      Object.values(states).forEach((state) => {
+        state.timers.forEach((timer) => window.clearTimeout(timer));
+      });
+
       peerConnectionsRef.current = {};
+      peerStatesRef.current = {};
       remoteStreamsRef.current = {};
+      remoteMediaStateRef.current = {};
 
       if (localStreamRef.current) {
         localStreamRef.current
@@ -598,9 +898,26 @@ function VideoCall({ roomId, userName = "You" }) {
         localStreamRef.current = null;
       }
 
+      const screenTrack = screenTrackRef.current;
+
+      if (screenTrack) {
+        screenTrack.onended = null;
+        screenTrack.stop();
+        screenTrackRef.current = null;
+      }
+
+      if (localVideoElement) {
+        localVideoElement.srcObject = null;
+      }
+
       setRemoteStreams([]);
+      setMediaStateByPeer({});
     };
-  }, [roomId]);
+    // The connect flow intentionally reuses stable component-scope helpers
+    // (createPeerConnection/stopRecording) and only re-runs on roomId or
+    // an explicit rejoin attempt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, attempt]);
 
   // Load this room's saved recordings so they are reachable
   // from the existing video-call UI. Matches the one-time
@@ -618,33 +935,59 @@ function VideoCall({ roomId, userName = "You" }) {
   const toggleMicrophone = () => {
     const stream = localStreamRef.current;
 
-    if (!stream) return;
+    if (!stream) {
+      setError("You are not connected to the video room.");
+      return;
+    }
 
     const audioTracks = stream.getAudioTracks();
+
+    if (audioTracks.length === 0) {
+      setError("No microphone is available on this device.");
+      return;
+    }
 
     audioTracks.forEach((track) => {
       track.enabled = !track.enabled;
     });
 
-    setMicEnabled(
-      audioTracks.some((track) => track.enabled)
-    );
+    const micEnabledNow = audioTracks.some((track) => track.enabled);
+    const cameraEnabledNow = stream
+      .getVideoTracks()
+      .some((track) => track.enabled);
+
+    setMicEnabled(micEnabledNow);
+    setError("");
+    sendLocalMediaState(cameraEnabledNow, micEnabledNow);
   };
 
   const toggleCamera = () => {
     const stream = localStreamRef.current;
 
-    if (!stream) return;
+    if (!stream) {
+      setError("You are not connected to the video room.");
+      return;
+    }
 
     const videoTracks = stream.getVideoTracks();
+
+    if (videoTracks.length === 0) {
+      setError("No camera is available on this device.");
+      return;
+    }
 
     videoTracks.forEach((track) => {
       track.enabled = !track.enabled;
     });
 
-    setCameraEnabled(
-      videoTracks.some((track) => track.enabled)
-    );
+    const cameraEnabledNow = videoTracks.some((track) => track.enabled);
+    const micEnabledNow = stream
+      .getAudioTracks()
+      .some((track) => track.enabled);
+
+    setCameraEnabled(cameraEnabledNow);
+    setError("");
+    sendLocalMediaState(cameraEnabledNow, micEnabledNow);
   };
 
   const toggleScreenShare = async () => {
@@ -652,103 +995,105 @@ function VideoCall({ roomId, userName = "You" }) {
 
     if (!stream) return;
 
-    if (!screenSharing) {
-      try {
-        const displayStream =
-          await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-          });
+    if (screenSharing) {
+      await stopScreenShare();
+      return;
+    }
 
-        const screenTrack =
-          displayStream.getVideoTracks()[0];
-
-        Object.values(
-          peerConnectionsRef.current
-        ).forEach((peer) => {
-          const sender = peer
-            .getSenders()
-            .find(
-              (item) =>
-                item.track?.kind === "video"
-            );
-
-          if (sender) {
-            sender.replaceTrack(screenTrack);
-          }
+    try {
+      const displayStream =
+        await navigator.mediaDevices.getDisplayMedia({
+          video: true,
         });
 
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject =
-            displayStream;
-        }
+      const screenTrack = displayStream.getVideoTracks()[0];
 
-        setScreenSharing(true);
-
-        screenTrack.onended = () => {
-          stopScreenShare();
-        };
-      } catch (err) {
-        console.log("Screen sharing cancelled.");
+      if (!screenTrack) {
+        displayStream.getTracks().forEach((track) => track.stop());
+        setError("Screen capture failed. Please try again.");
+        return;
       }
-    } else {
-      stopScreenShare();
+
+      screenTrackRef.current = screenTrack;
+
+      for (const peer of Object.values(peerConnectionsRef.current)) {
+        const sender = peer
+          .getSenders()
+          .find((item) => item.track?.kind === "video");
+
+        if (sender) {
+          // Same transceiver switch - no renegotiation required.
+          await sender.replaceTrack(screenTrack);
+        } else {
+          // No video track yet (no camera) - add the screen track and let
+          // onnegotiationneeded renegotiate so the remote actually sees it.
+          peer.addTrack(screenTrack, displayStream);
+        }
+      }
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = displayStream;
+      }
+
+      setScreenSharing(true);
+      setError("");
+
+      // If the browser ends the share (stop button in the UI, tab switch
+      // policy, capture-in-use-warning), fall back to the camera stream.
+      screenTrack.onended = () => {
+        if (screenTrackRef.current === screenTrack) {
+          stopScreenShare();
+        }
+      };
+    } catch (err) {
+      console.log("Screen sharing cancelled or unavailable:", err?.name || err);
+      setScreenSharing(false);
     }
   };
 
   const stopScreenShare = async () => {
-    try {
-      const cameraStream =
-        await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+    const screenTrack = screenTrackRef.current;
 
-      const cameraTrack =
-        cameraStream.getVideoTracks()[0];
+    if (!screenTrack && !screenSharing) return;
 
-      Object.values(
-        peerConnectionsRef.current
-      ).forEach((peer) => {
-        const sender = peer
-          .getSenders()
-          .find(
-            (item) =>
-              item.track?.kind === "video"
-          );
+    const stream = localStreamRef.current;
+    const cameraTrack = stream?.getVideoTracks()[0] || null;
 
-        if (sender) {
-          sender.replaceTrack(cameraTrack);
+    for (const peer of Object.values(peerConnectionsRef.current)) {
+      const sender = peer
+        .getSenders()
+        .find((item) => item.track === screenTrack);
+
+      if (!sender) continue;
+
+      try {
+        if (cameraTrack) {
+          // Return to the original (still live) local camera track. No new
+          // getUserMedia request and no dead track left on the connection.
+          await sender.replaceTrack(cameraTrack);
+        } else {
+          // There was never a camera; detach the ended screen track properly
+          // (onnegotiationneeded renegotiates the removal).
+          peer.removeTrack(sender);
         }
-      });
-
-      const currentStream =
-        localStreamRef.current;
-
-      if (currentStream) {
-        const oldVideoTracks =
-          currentStream.getVideoTracks();
-
-        oldVideoTracks.forEach((track) => {
-          track.stop();
-          currentStream.removeTrack(track);
-        });
-
-        currentStream.addTrack(cameraTrack);
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject =
-            currentStream;
-        }
+      } catch (err) {
+        console.error("Screen track restore error:", err);
       }
-
-      setScreenSharing(false);
-      setCameraEnabled(true);
-    } catch (err) {
-      console.error(
-        "Unable to restore camera:",
-        err
-      );
     }
+
+    if (stream && localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+
+    if (screenTrack) {
+      screenTrack.onended = null;
+      screenTrack.stop();
+      screenTrackRef.current = null;
+    }
+
+    setScreenSharing(false);
+    setCameraEnabled(cameraTrack ? cameraTrack.enabled : false);
+    setError("");
   };
 
   const toggleFullscreen = async () => {
@@ -770,13 +1115,21 @@ function VideoCall({ roomId, userName = "You" }) {
 
   const leaveRoom = () => {
     stopRecording();
+
     socket.emit("leaveVideoRoom", roomId);
 
     Object.values(
       peerConnectionsRef.current
     ).forEach((peer) => peer.close());
 
+    const states = peerStatesRef.current;
+
+    Object.values(states).forEach((state) => {
+      state.timers.forEach((timer) => window.clearTimeout(timer));
+    });
+
     peerConnectionsRef.current = {};
+    peerStatesRef.current = {};
 
     if (localStreamRef.current) {
       localStreamRef.current
@@ -786,8 +1139,36 @@ function VideoCall({ roomId, userName = "You" }) {
 
     localStreamRef.current = null;
 
+    const screenTrack = screenTrackRef.current;
+
+    if (screenTrack) {
+      screenTrack.onended = null;
+      screenTrack.stop();
+      screenTrackRef.current = null;
+    }
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+
+    remoteStreamsRef.current = {};
+    remoteMediaStateRef.current = {};
+
     setRemoteStreams([]);
+    setMediaStateByPeer({});
     setJoined(false);
+    setScreenSharing(false);
+    setError("");
+  };
+
+  const rejoinRoom = () => {
+    // Reset the control indicators; the join effect re-detects the actual
+    // camera/microphone availability from the freshly acquired stream.
+    setMicEnabled(true);
+    setCameraEnabled(true);
+    setScreenSharing(false);
+    setError("");
+    setAttempt((current) => current + 1);
   };
 
   return (
@@ -807,7 +1188,7 @@ function VideoCall({ roomId, userName = "You" }) {
               size={12}
               className="text-[var(--success)]"
             />
-            {joined ? "Connected" : "Connecting..."}
+            {joined ? "Connected" : "Not connected"}
           </div>
         </div>
 
@@ -912,7 +1293,7 @@ function VideoCall({ roomId, userName = "You" }) {
               className="h-full min-h-[220px] w-full object-cover"
             />
 
-            {!cameraEnabled && (
+            {!cameraEnabled && !screenSharing && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#101117]">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--accent-muted)] text-xl font-semibold text-[var(--accent)]">
                   {userName.charAt(0).toUpperCase()}
@@ -933,7 +1314,12 @@ function VideoCall({ roomId, userName = "You" }) {
             <RemoteVideo
               key={remote.id}
               stream={remote.stream}
-              socketId={remote.id}
+              cameraEnabled={
+                mediaStateByPeer[remote.id]?.cameraEnabled
+              }
+              micEnabled={
+                mediaStateByPeer[remote.id]?.micEnabled
+              }
             />
           ))}
         </div>
@@ -1029,12 +1415,16 @@ function VideoCall({ roomId, userName = "You" }) {
 
         <button
           type="button"
-          onClick={leaveRoom}
-          className="ml-2 flex h-10 items-center gap-2 rounded-lg bg-[var(--error)] px-4 text-sm font-medium text-white transition hover:opacity-90"
+          onClick={joined ? leaveRoom : rejoinRoom}
+          className={`ml-2 flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium text-white transition hover:opacity-90 ${
+            joined
+              ? "bg-[var(--error)]"
+              : "bg-[var(--accent)]"
+          }`}
         >
-          <PhoneOff size={17} />
+          {joined ? <PhoneOff size={17} /> : <Video size={17} />}
           <span className="hidden sm:inline">
-            Leave
+            {joined ? "Leave" : "Rejoin"}
           </span>
         </button>
       </div>
@@ -1042,7 +1432,7 @@ function VideoCall({ roomId, userName = "You" }) {
   );
 }
 
-function RemoteVideo({ stream, socketId }) {
+function RemoteVideo({ stream, cameraEnabled, micEnabled }) {
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -1063,6 +1453,20 @@ function RemoteVideo({ stream, socketId }) {
         playsInline
         className="h-full min-h-[220px] w-full object-cover"
       />
+
+      {cameraEnabled === false && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#101117]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent-muted)] text-[var(--accent)]">
+            <VideoOff size={18} />
+          </div>
+        </div>
+      )}
+
+      {micEnabled === false && (
+        <div className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-[var(--error)] backdrop-blur-sm">
+          <MicOff size={14} />
+        </div>
+      )}
 
       <div className="absolute bottom-3 left-3 rounded-md bg-black/55 px-2.5 py-1.5 text-xs text-white backdrop-blur-sm">
         Participant
