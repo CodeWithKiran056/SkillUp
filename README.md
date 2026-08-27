@@ -13,8 +13,6 @@ The platform combines student profiles, compatibility-based partner discovery, c
 **Production Website:**  
 https://skillup-frontend-up4n.onrender.com
 
-**Backend API:**  
-https://skillup-api-st8q.onrender.com
 
 > The frontend and backend are deployed separately. The frontend communicates with the production backend through the configured `VITE_API_URL` environment variable.
 
