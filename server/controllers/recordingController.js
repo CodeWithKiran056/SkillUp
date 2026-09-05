@@ -1,4 +1,5 @@
 const { Readable } = require("stream");
+const mongoose = require("mongoose");
 
 const cloudinary = require("../config/cloudinary");
 const Room = require("../models/Room");
@@ -321,8 +322,86 @@ const getMyRecordings = async (req, res) => {
     }
 };
 
+// ==========================================
+// DELETE RECORDING
+// DELETE /api/recordings/:recordingId
+// ==========================================
+
+const deleteRecording = async (req, res) => {
+    try {
+        const { recordingId } = req.params;
+
+        if (
+            !recordingId ||
+            typeof recordingId !== "string" ||
+            !mongoose.Types.ObjectId.isValid(recordingId.trim())
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "A valid recording ID is required",
+            });
+        }
+
+        // Load the recording AND enforce ownership in a single query.
+        // req.user.id is the ONLY identity source (verified JWT).
+        // A userId supplied by the client is never trusted here.
+        const recording = await SessionRecording.findOne({
+            _id: recordingId.trim(),
+            user: req.user.id,
+        });
+
+        if (!recording) {
+            // The recording does not exist OR belongs to another user.
+            // A generic 404 deliberately avoids leaking existence.
+            return res.status(404).json({
+                success: false,
+                message: "Recording not found",
+            });
+        }
+
+        // Delete the Cloudinary asset first, but never let a Cloudinary
+        // failure block the database deletion. This keeps the database
+        // the source of truth: once ownership is verified, the MongoDB
+        // row is always removed so the user is never stuck with an
+        // undeletable recording. Cloudinary failures are logged so the
+        // orphan asset can be cleaned up by an admin if needed.
+        if (recording.cloudinaryPublicId) {
+            try {
+                await cloudinary.uploader.destroy(
+                    recording.cloudinaryPublicId,
+                    { resource_type: "video" }
+                );
+            } catch (cloudError) {
+                // "Not found" on Cloudinary is fine (asset already gone);
+                // other errors are warnings only, the DB row is still
+                // removed so state stays consistent for the user.
+                console.error(
+                    "Cloudinary delete warning (DB row will still be removed):",
+                    cloudError
+                );
+            }
+        }
+
+        // Remove the database document now that ownership is confirmed.
+        await SessionRecording.deleteOne({ _id: recording._id });
+
+        return res.status(200).json({
+            success: true,
+            message: "Recording deleted",
+        });
+    } catch (error) {
+        console.error("Delete Recording Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Recording could not be deleted",
+        });
+    }
+};
+
 module.exports = {
     uploadRecording,
     getRecordingsByRoom,
     getMyRecordings,
+    deleteRecording,
 };

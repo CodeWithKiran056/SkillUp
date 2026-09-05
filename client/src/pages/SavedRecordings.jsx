@@ -4,9 +4,11 @@ import {
   CalendarDays,
   ChevronLeft,
   Clock,
+  Loader2,
   MonitorPlay,
   PlayCircle,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -17,6 +19,12 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   EmptyState,
   ErrorState,
   LoadingState,
@@ -81,6 +89,12 @@ function SavedRecordings() {
 
   const [activeRecording, setActiveRecording] =
     useState(null);
+
+  /* Delete-related state */
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   /* ==========================================================
      Fetch the authenticated user's saved recordings.
@@ -148,6 +162,125 @@ function SavedRecordings() {
     setActiveRecording(null);
     setError("");
   };
+
+  /* ==========================================================
+     Delete flow
+     ========================================================== */
+  const openDeleteDialog = (recording) => {
+    setDeleteError("");
+    setSuccessMessage("");
+    setDeleteTarget(recording);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deletingId) return;
+    setDeleteTarget(null);
+    setDeleteError("");
+  };
+
+  const dismissSuccess = () => {
+    setSuccessMessage("");
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || !token || deletingId) return;
+
+    const recordingId = deleteTarget._id;
+
+    setDeletingId(recordingId);
+    setDeleteError("");
+
+    try {
+      await axios.delete(
+        `${API_URL}/api/recordings/${recordingId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      // Remove from the list immediately (no reload needed).
+      setRecordings((prev) =>
+        prev.filter((recording) => recording._id !== recordingId)
+      );
+
+      // Close the player if the deleted recording was selected.
+      if (activeRecording?._id === recordingId) {
+        setActiveRecording(null);
+      }
+
+      setDeleteTarget(null);
+      setSuccessMessage("Recording deleted.");
+    } catch (err) {
+      console.error(
+        "Delete recording error:",
+        err.response?.data || err.message
+      );
+
+      // Keep the recording in the list so the user can retry.
+      setDeleteError(
+        err.response?.data?.message ||
+          "Unable to delete this recording. Please try again."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const deleteDialog = (
+    <Dialog
+      open={Boolean(deleteTarget)}
+      onOpenChange={(open) => {
+        if (!open) closeDeleteDialog();
+      }}
+    >
+      <DialogContent
+        onClose={deletingId ? undefined : closeDeleteDialog}
+        className="max-w-md"
+      >
+        <DialogHeader>
+          <DialogTitle>Delete this recording?</DialogTitle>
+          <DialogDescription>
+            This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+
+        {deleteError && (
+          <p className="mt-4 rounded-lg border border-[rgba(240,95,100,0.28)] bg-[rgba(240,95,100,0.09)] px-3 py-2 text-sm text-[var(--error)]">
+            {deleteError}
+          </p>
+        )}
+
+        <DialogFooter>
+          <Button
+            onClick={closeDeleteDialog}
+            variant="secondary"
+            disabled={Boolean(deletingId)}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDelete}
+            variant="danger"
+            disabled={Boolean(deletingId)}
+          >
+            {deletingId ? (
+              <>
+                <Loader2 size={15} className="animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 size={15} />
+                Delete
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   /* ----------------------------------------------------------
      Loading state
@@ -241,15 +374,29 @@ function SavedRecordings() {
                   "Session recording"}
               </p>
             </div>
-            <Button
-              onClick={closePlayer}
-              variant="secondary"
-            >
-              <ChevronLeft size={16} />
-              Back to recordings
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                aria-label="Delete this recording"
+                onClick={() => openDeleteDialog(activeRecording)}
+                variant="ghost"
+                disabled={Boolean(deletingId)}
+                className="text-[var(--error)] hover:bg-[rgba(240,95,100,0.1)] hover:text-[var(--error)]"
+              >
+                <Trash2 size={16} />
+                Delete
+              </Button>
+              <Button
+                onClick={closePlayer}
+                variant="secondary"
+              >
+                <ChevronLeft size={16} />
+                Back to recordings
+              </Button>
+            </div>
           </CardFooter>
         </Card>
+
+        {deleteDialog}
       </div>
     );
   }
@@ -272,11 +419,26 @@ function SavedRecordings() {
           </p>
         </section>
 
+        {successMessage && (
+          <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-[rgba(40,199,111,0.28)] bg-[rgba(40,199,111,0.09)] px-4 py-3 text-sm text-[var(--success)]">
+            <span>{successMessage}</span>
+            <button
+              type="button"
+              onClick={dismissSuccess}
+              className="shrink-0 font-semibold underline hover:opacity-80"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         <EmptyState
           icon={MonitorPlay}
           title="No saved recordings yet"
           description="When you record a study session and save it, the recording will appear here so you can watch it again anytime."
         />
+
+        {deleteDialog}
       </div>
     );
   }
@@ -304,6 +466,19 @@ function SavedRecordings() {
           <button
             type="button"
             onClick={() => setError("")}
+            className="shrink-0 font-semibold underline hover:opacity-80"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-[rgba(40,199,111,0.28)] bg-[rgba(40,199,111,0.09)] px-4 py-3 text-sm text-[var(--success)]">
+          <span>{successMessage}</span>
+          <button
+            type="button"
+            onClick={dismissSuccess}
             className="shrink-0 font-semibold underline hover:opacity-80"
           >
             Dismiss
@@ -370,13 +545,30 @@ function SavedRecordings() {
                 </p>
               </CardContent>
 
-              {!playable && (
-                <CardFooter className="pt-0">
-                  <p className="text-xs leading-5 text-[var(--text-muted)]">
-                    This recording is missing a valid video link.
-                  </p>
-                </CardFooter>
-              )}
+              <CardFooter className="flex items-center justify-between gap-3 pt-0">
+                <div className="min-w-0">
+                  {!playable && (
+                    <p className="text-xs leading-5 text-[var(--text-muted)]">
+                      This recording is missing a valid video link.
+                    </p>
+                  )}
+                </div>
+                <Button
+                  aria-label={`Delete ${recording.roomName || "this recording"}`}
+                  onClick={() => openDeleteDialog(recording)}
+                  size="sm"
+                  variant="ghost"
+                  disabled={deletingId === recording._id}
+                  className="shrink-0 text-[var(--error)] hover:bg-[rgba(240,95,100,0.1)] hover:text-[var(--error)]"
+                >
+                  {deletingId === recording._id ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={15} />
+                  )}
+                  Delete
+                </Button>
+              </CardFooter>
             </Card>
           );
         })}
@@ -393,6 +585,8 @@ function SavedRecordings() {
           </Button>
         </div>
       )}
+
+      {deleteDialog}
     </div>
   );
 }

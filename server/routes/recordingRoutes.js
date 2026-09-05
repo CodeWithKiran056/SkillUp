@@ -9,6 +9,7 @@ const {
     uploadRecording,
     getRecordingsByRoom,
     getMyRecordings,
+    deleteRecording,
 } = require("../controllers/recordingController");
 
 // Upload a session recording
@@ -60,6 +61,16 @@ router.get(
     "/:roomId",
     authMiddleware,
     getRecordingsByRoom
+);
+
+// Delete a saved recording
+// DELETE /api/recordings/:recordingId
+// Auth required. Ownership is enforced server-side using
+// req.user.id; a client-supplied userId is never trusted.
+router.delete(
+    "/:recordingId",
+    authMiddleware,
+    deleteRecording
 );
 
 module.exports = router;
