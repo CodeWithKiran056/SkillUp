@@ -14,7 +14,6 @@ import {
   Wifi,
   Loader2,
   CheckCircle,
-  AlertCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import axios from "axios";
@@ -72,7 +71,6 @@ function VideoCall({ roomId, userName = "You" }) {
   // "idle" | "saving" | "saved" | "failed"
   const [recordingStatus, setRecordingStatus] =
     useState("idle");
-  const [roomRecordings, setRoomRecordings] = useState([]);
   const pendingRecordingRef = useRef(null);
 
   const buildRecordingStream = () => {
@@ -259,32 +257,6 @@ function VideoCall({ roomId, userName = "You" }) {
     }
   };
 
-  const fetchRoomRecordings = async () => {
-    if (!roomId) return;
-
-    const token = getToken();
-
-    if (!token) return;
-
-    try {
-      const { data } = await axios.get(
-        `${API_URL}/api/recordings/${roomId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      setRoomRecordings(data?.recordings || []);
-    } catch (err) {
-      console.error(
-        "Load recordings error:",
-        err.response?.data || err.message
-      );
-    }
-  };
-
   // Uploads the recording Blob to the backend, which stores it
   // securely on Cloudinary and saves the reference in MongoDB.
   // The Blob is reused from the live call streams - no new capture.
@@ -294,6 +266,7 @@ function VideoCall({ roomId, userName = "You" }) {
     if (!token) {
       pendingRecordingRef.current = { blob, mimeType, duration };
       setRecordingStatus("failed");
+      setError("Please log in to save recordings.");
       return;
     }
 
@@ -327,10 +300,6 @@ function VideoCall({ roomId, userName = "You" }) {
       setRecordingStatus("saved");
       setError("");
 
-      // Refresh the room's recording list (includes the new one),
-      // then collapse the success message again.
-      fetchRoomRecordings();
-
       setTimeout(() => {
         setRecordingStatus((current) =>
           current === "saved" ? "idle" : current
@@ -342,10 +311,11 @@ function VideoCall({ roomId, userName = "You" }) {
         err.response?.data || err.message
       );
 
-      // Blob stays in pendingRecordingRef for a same-session retry.
-      // The inline panel surfaces the failure (with a Retry action);
-      // the generic error banner is left untouched.
       setRecordingStatus("failed");
+      setError(
+        err.response?.data?.message ||
+          "Recording could not be saved. Please try again."
+      );
     }
   };
 
@@ -919,19 +889,6 @@ function VideoCall({ roomId, userName = "You" }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, attempt]);
 
-  // Load this room's saved recordings so they are reachable
-  // from the existing video-call UI. Matches the one-time
-  // room data load pattern used elsewhere in the app.
-  useEffect(() => {
-    // set-state-in-effect suppressed: mirrors the existing
-    // one-time room data loads (e.g. StudyRoom/StudyPartners).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchRoomRecordings();
-    // fetchRoomRecordings is recreated per-render; running
-    // this effect only on roomId change is intentional.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
-
   const toggleMicrophone = () => {
     const stream = localStreamRef.current;
 
@@ -1201,7 +1158,16 @@ function VideoCall({ roomId, userName = "You" }) {
       {/* Error */}
       {error && (
         <div className="absolute left-1/2 top-20 z-30 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-lg border border-[var(--error)]/30 bg-[var(--error)]/10 p-3 text-center text-sm text-[var(--error)] backdrop-blur-md">
-          {error}
+          <span>{error}</span>
+          {pendingRecordingRef.current && (
+            <button
+              type="button"
+              onClick={retrySaveRecording}
+              className="ml-2 font-semibold underline hover:opacity-80"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 
@@ -1218,60 +1184,18 @@ function VideoCall({ roomId, userName = "You" }) {
           </div>
         )}
 
-        {/* Recording status + saved playback */}
-        {(recordingStatus !== "idle" ||
-          roomRecordings.length > 0) && (
-          <div className="absolute left-3 top-32 z-30 flex w-72 max-w-[calc(100%-24px)] flex-col gap-3 rounded-lg border border-white/10 bg-black/85 p-3 text-white backdrop-blur-md">
-            {recordingStatus === "saving" && (
-              <p className="flex items-center gap-2 text-xs text-white/80">
-                <Loader2 size={13} className="animate-spin" />
-                Saving recording...
-              </p>
-            )}
+        {/* Transient saving / saved indicator */}
+        {recordingStatus === "saving" && (
+          <div className="absolute left-3 top-14 z-10 flex items-center gap-2 rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
+            <Loader2 size={13} className="animate-spin text-[var(--accent)]" />
+            Saving recording...
+          </div>
+        )}
 
-            {recordingStatus === "saved" && (
-              <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--success)]">
-                <CheckCircle size={13} />
-                Recording saved
-              </p>
-            )}
-
-            {recordingStatus === "failed" && (
-              <div className="text-xs">
-                <p className="flex items-center gap-1.5 text-[var(--error)]">
-                  <AlertCircle size={13} />
-                  Recording could not be saved.
-                </p>
-                <button
-                  type="button"
-                  onClick={retrySaveRecording}
-                  className="mt-2 rounded-md bg-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/15"
-                >
-                  Retry Save
-                </button>
-              </div>
-            )}
-
-            {roomRecordings.length > 0 && (
-              <div className="border-t border-white/10 pt-2">
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-white/55">
-                  Session Recordings
-                </p>
-
-                <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                  {roomRecordings.map((recording) => (
-                    <video
-                      key={recording._id}
-                      src={recording.recordingUrl}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="w-full rounded-md bg-black"
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+        {recordingStatus === "saved" && (
+          <div className="absolute left-3 top-14 z-10 flex items-center gap-1.5 rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-medium text-[var(--success)] backdrop-blur-sm">
+            <CheckCircle size={13} />
+            Recording saved
           </div>
         )}
         <div
@@ -1390,10 +1314,13 @@ function VideoCall({ roomId, userName = "You" }) {
         <button
           type="button"
           onClick={isRecording ? stopRecording : startRecording}
+          disabled={recordingStatus === "saving"}
           className={`ml-2 flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium transition ${
             isRecording
               ? "bg-[var(--error)] text-white hover:opacity-90"
-              : "bg-white/10 text-white hover:bg-white/15"
+              : recordingStatus === "saving"
+                ? "cursor-not-allowed bg-white/5 text-white/50"
+                : "bg-white/10 text-white hover:bg-white/15"
           }`}
         >
           {isRecording ? (
@@ -1401,6 +1328,13 @@ function VideoCall({ roomId, userName = "You" }) {
               <Square size={15} />
               <span className="hidden sm:inline">
                 Stop Recording
+              </span>
+            </>
+          ) : recordingStatus === "saving" ? (
+            <>
+              <Loader2 size={15} className="animate-spin text-white/70" />
+              <span className="hidden sm:inline">
+                Saving...
               </span>
             </>
           ) : (
