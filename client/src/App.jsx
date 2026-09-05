@@ -12,6 +12,7 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Messages from "./pages/Messages";
 import MySessions from "./pages/MySessions";
+import SavedRecordings from "./pages/SavedRecordings";
 import ChatRoom from "./components/ChatRoom";
 
 import ForgotPassword from "./pages/ForgotPassword";
@@ -137,6 +138,12 @@ function App() {
           element={protectedPage(<MySessions />)}
         />
 
+
+
+        <Route
+          path="/saved-recordings"
+          element={protectedPage(<SavedRecordings />)}
+        />
 
 
 

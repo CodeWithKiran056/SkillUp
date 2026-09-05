@@ -268,7 +268,61 @@ const getRecordingsByRoom = async (req, res) => {
     }
 };
 
+// ==========================================
+// GET MY (SAVED) RECORDINGS
+// GET /api/recordings/me
+// ==========================================
+
+const getMyRecordings = async (req, res) => {
+    try {
+        // Identity comes ONLY from the verified JWT (req.user.id).
+        // A userId supplied by the frontend is never trusted here.
+        const recordings = await SessionRecording.find({
+            user: req.user.id,
+        }).sort({ createdAt: -1 });
+
+        // Resolve room display names using the existing Room model.
+        // SessionRecording.roomId is a string, so look up the Room
+        // documents by their roomId strings and map them once.
+        const roomIds = [
+            ...new Set(
+                recordings.map((recording) => recording.roomId)
+            ),
+        ].filter(Boolean);
+
+        let roomNames = {};
+
+        if (roomIds.length > 0) {
+            const rooms = await Room.find({
+                roomId: { $in: roomIds },
+            }).select("roomId name");
+
+            roomNames = rooms.reduce((map, room) => {
+                map[room.roomId] = room.name;
+                return map;
+            }, {});
+        }
+
+        return res.status(200).json({
+            success: true,
+            count: recordings.length,
+            recordings: recordings.map((recording) => ({
+                ...shapeRecording(recording),
+                roomName: roomNames[recording.roomId] || "Study Room",
+            })),
+        });
+    } catch (error) {
+        console.error("Get My Recordings Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to load your recordings",
+        });
+    }
+};
+
 module.exports = {
     uploadRecording,
     getRecordingsByRoom,
+    getMyRecordings,
 };

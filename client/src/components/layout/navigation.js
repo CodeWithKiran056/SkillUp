@@ -5,6 +5,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   MessageCircle,
+  MonitorPlay,
   Settings,
   Users,
 } from "lucide-react";
@@ -39,6 +40,11 @@ export const navItems = [
     icon: CalendarDays,
     label: "My Sessions",
     path: "/mysessions",
+  },
+  {
+    icon: MonitorPlay,
+    label: "Saved Recordings",
+    path: "/saved-recordings",
   },
   {
     icon: MessageCircle,

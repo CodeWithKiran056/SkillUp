@@ -8,6 +8,7 @@ const recordingUpload = require("../middleware/recordingUpload");
 const {
     uploadRecording,
     getRecordingsByRoom,
+    getMyRecordings,
 } = require("../controllers/recordingController");
 
 // Upload a session recording
@@ -38,6 +39,18 @@ router.post(
         });
     },
     uploadRecording
+);
+
+// Get the authenticated user's saved recordings
+// GET /api/recordings/me
+// Auth required. Identity comes ONLY from the JWT (req.user.id);
+// a userId from the client is never trusted here.
+// NOTE: registered BEFORE "/:roomId" so "me" is never
+// interpreted as a roomId.
+router.get(
+    "/me",
+    authMiddleware,
+    getMyRecordings
 );
 
 // Get recordings for a study room
