@@ -3,6 +3,7 @@ const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const generateToken = require("../utils/generateToken");
 const sendEmail = require("../utils/sendEmail");
+const { createNotification } = require("../services/notificationService");
 
 
 // @desc    Register new user
@@ -515,6 +516,17 @@ const changePassword = async (req, res) => {
         user.password = await bcrypt.hash(newPassword, salt);
 
         await user.save();
+
+        // Real account/security event -> notify the user.
+        await createNotification({
+            user: userId,
+            type: "account",
+            title: "Password Changed",
+            message: "Your SkillUp password was changed successfully.",
+            relatedId: userId,
+            relatedType: "account",
+            eventKey: `password_changed:${userId}:${Date.now()}`,
+        });
 
         res.status(200).json({
             success: true,

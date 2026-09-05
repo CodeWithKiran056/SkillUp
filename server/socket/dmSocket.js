@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
 const Conversation = require("../models/Conversation");
 const DirectMessage = require("../models/DirectMessage");
+const User = require("../models/User");
+const { createNotification } = require("../services/notificationService");
 
 // ==========================================
 // DIRECT MESSAGE SOCKET
@@ -154,6 +156,32 @@ const dmSocket = (io) => {
                     "receiveDirectMessage",
                     populatedMessage
                 );
+
+                // Real event -> notify the other participant only.
+                // The sender is NEVER notified about their own message.
+                const recipientIds = conversation.participants
+                    .map((p) => String(p._id || p))
+                    .filter((p) => p !== authenticatedUserId);
+
+                if (recipientIds.length > 0) {
+                    const sender = await User.findById(
+                        authenticatedUserId
+                    ).select("name");
+
+                    await Promise.all(
+                        recipientIds.map((recipientId) =>
+                            createNotification({
+                                user: recipientId,
+                                type: "message",
+                                title: "New Message",
+                                message: `${sender?.name || "A student"} sent you a new message.`,
+                                relatedId: String(conversation._id),
+                                relatedType: "conversation",
+                                eventKey: `dm:${newMessage._id}:${recipientId}`,
+                            })
+                        )
+                    );
+                }
             } catch (error) {
                 console.error(
                     "DM Socket Error:",

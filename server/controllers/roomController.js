@@ -1,4 +1,6 @@
 const Room = require("../models/Room");
+const User = require("../models/User");
+const { createNotification } = require("../services/notificationService");
 
 // ==========================================
 // CREATE STUDY ROOM
@@ -171,6 +173,19 @@ const requestToJoinRoom = async (req, res) => {
 
         await room.save();
 
+        // Real event -> notify the room creator.
+        const requester = await User.findById(userId).select("name");
+
+        await createNotification({
+            user: room.createdBy,
+            type: "study_room_join_request",
+            title: "New Join Request",
+            message: `${requester?.name || "A student"} wants to join your study room "${room.name}".`,
+            relatedId: room.roomId,
+            relatedType: "room",
+            eventKey: `room_join_request:${room.roomId}:${userId}`,
+        });
+
         return res.status(200).json({
             success: true,
             message: "Join request sent successfully",
@@ -262,6 +277,40 @@ const acceptJoinRequest = async (req, res) => {
 
         await room.save();
 
+        // Real event -> notify the requester that they were accepted.
+        const acceptedUser = await User.findById(userId).select("name");
+
+        await createNotification({
+            user: userId,
+            type: "study_room_join_accepted",
+            title: "Join Request Accepted",
+            message: `You have been added to the study room "${room.name}".`,
+            relatedId: room.roomId,
+            relatedType: "room",
+            eventKey: `room_join_accepted:${room.roomId}:${userId}`,
+        });
+
+        // Real event -> member activity for existing members.
+        const existingMemberIds = (room.members || [])
+            .map((member) => member.toString())
+            .filter((memberId) => memberId !== userId.toString());
+
+        if (existingMemberIds.length > 0) {
+            await Promise.all(
+                existingMemberIds.map((memberId) =>
+                    createNotification({
+                        user: memberId,
+                        type: "study_room_member_joined",
+                        title: "New Member Joined",
+                        message: `${acceptedUser?.name || "A student"} joined your study room "${room.name}".`,
+                        relatedId: room.roomId,
+                        relatedType: "room",
+                        eventKey: `room_member_joined:${room.roomId}:${memberId}:${userId}`,
+                    })
+                )
+            );
+        }
+
         const updatedRoom = await Room.findById(room._id)
             .populate("createdBy", "name email")
             .populate("members", "name email")
@@ -317,6 +366,17 @@ const rejectJoinRequest = async (req, res) => {
 
         await room.save();
 
+        // Real event -> notify the rejected requester.
+        await createNotification({
+            user: userId,
+            type: "study_room_join_rejected",
+            title: "Join Request Declined",
+            message: `Your join request for "${room.name}" was declined.`,
+            relatedId: room.roomId,
+            relatedType: "room",
+            eventKey: `room_join_rejected:${room.roomId}:${userId}`,
+        });
+
         return res.status(200).json({
             success: true,
             message: "Join request rejected",
@@ -354,6 +414,27 @@ const deleteRoom = async (req, res) => {
         await Room.deleteOne({
             _id: room._id,
         });
+
+        // Real event -> notify the remaining members.
+        const notifiedMemberIds = (room.members || [])
+            .map((member) => member.toString())
+            .filter((memberId) => memberId !== room.createdBy.toString());
+
+        if (notifiedMemberIds.length > 0) {
+            await Promise.all(
+                notifiedMemberIds.map((memberId) =>
+                    createNotification({
+                        user: memberId,
+                        type: "study_room_deleted",
+                        title: "Study Room Deleted",
+                        message: `The study room "${room.name}" was deleted by its creator.`,
+                        relatedId: room.roomId,
+                        relatedType: "room",
+                        eventKey: `room_deleted:${room.roomId}:${memberId}`,
+                    })
+                )
+            );
+        }
 
         return res.status(200).json({
             success: true,

@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const cloudinary = require("../config/cloudinary");
+const { createNotification } = require("../services/notificationService");
 
 
 // Get User Profile
@@ -214,6 +215,19 @@ const sendConnectionRequest = async (req, res) => {
             $addToSet: { connectionRequests: senderId }
         });
 
+        // Real event -> notify the receiver.
+        const sender = await User.findById(senderId).select("name");
+
+        await createNotification({
+            user: receiverId,
+            type: "connection_request",
+            title: "New Connection Request",
+            message: `${sender?.name || "A student"} sent you a connection request.`,
+            relatedId: senderId,
+            relatedType: "user",
+            eventKey: `connection_request:${receiverId}:${senderId}`,
+        });
+
         res.status(200).json({
             success: true,
             message: "Connection request sent"
@@ -303,6 +317,17 @@ const acceptConnectionRequest = async (req, res) => {
 
         await User.findByIdAndUpdate(requesterId, {
             $addToSet: { connections: receiverId }
+        });
+
+        // Real event -> notify the original requester.
+        await createNotification({
+            user: requesterId,
+            type: "connection_accepted",
+            title: "Connection Accepted",
+            message: `${receiver.name} accepted your connection request.`,
+            relatedId: receiverId,
+            relatedType: "user",
+            eventKey: `connection_accepted:${requesterId}:${receiverId}`,
         });
 
         res.status(200).json({

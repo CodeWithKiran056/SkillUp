@@ -1,6 +1,7 @@
-import { Bell, Menu, Search, UserCircle } from "lucide-react";
+import { Menu, Search, UserCircle } from "lucide-react";
 import { getUser } from "../../utils/auth";
 import { Button, Dropdown, DropdownItem, DropdownLabel, DropdownSeparator, Input } from "../ui";
+import NotificationBell from "./NotificationBell";
 
 function Topbar({ actions, onMobileMenu, title }) {
   const user = getUser();
@@ -37,10 +38,7 @@ function Topbar({ actions, onMobileMenu, title }) {
 
       {actions && <div className="hidden items-center gap-2 md:flex">{actions}</div>}
 
-      <Button aria-label="Notifications" className="relative" size="icon" variant="secondary">
-        <Bell size={18} />
-        <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[var(--accent)]" />
-      </Button>
+      <NotificationBell />
 
       <Dropdown
         trigger={

@@ -1,4 +1,7 @@
 const Message = require("../models/Message");
+const Room = require("../models/Room");
+const User = require("../models/User");
+const { createNotification } = require("../services/notificationService");
 
 const chatSocket = (io) => {
     io.on("connection", (socket) => {
@@ -102,6 +105,52 @@ const chatSocket = (io) => {
                         "receiveMessage",
                         populatedMessage
                     );
+
+                    // Real event -> notify the OTHER room members.
+                    // The sender is NEVER notified about their own message.
+                    try {
+                        const room = await Room.findOne({
+                            roomId,
+                        }).select("name members");
+
+                        if (room) {
+                            const recipientIds =
+                                (room.members || [])
+                                    .map((member) =>
+                                        member.toString()
+                                    )
+                                    .filter(
+                                        (memberId) =>
+                                            memberId !==
+                                            String(sender)
+                                    );
+
+                            if (recipientIds.length > 0) {
+                                const senderDoc = await User.findById(
+                                    sender
+                                ).select("name");
+
+                                await Promise.all(
+                                    recipientIds.map((recipientId) =>
+                                        createNotification({
+                                            user: recipientId,
+                                            type: "message",
+                                            title: "New Message",
+                                            message: `${senderDoc?.name || "A student"} sent a message in "${room.name}".`,
+                                            relatedId: roomId,
+                                            relatedType: "room",
+                                            eventKey: `room_message:${newMessage._id}:${recipientId}`,
+                                        })
+                                    )
+                                );
+                            }
+                        }
+                    } catch (notifyError) {
+                        console.error(
+                            "Chat Notification Error:",
+                            notifyError.message
+                        );
+                    }
                 } catch (error) {
                     console.error(
                         "Chat Message Error:",

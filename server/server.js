@@ -25,6 +25,7 @@ const roomRoutes = require("./routes/roomRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const conversationRoutes = require("./routes/conversationRoutes");
 const recordingRoutes = require("./routes/recordingRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 // =========================================
 // SOCKETS
@@ -33,6 +34,7 @@ const recordingRoutes = require("./routes/recordingRoutes");
 const chatSocket = require("./socket/chatSocket");
 const videoSocket = require("./socket/videoSocket");
 const { dmSocket } = require("./socket/dmSocket");
+const { notificationSocket } = require("./socket/notificationSocket");
 
 // =========================================
 // APP
@@ -121,6 +123,8 @@ app.use("/api/conversations", conversationRoutes);
 
 app.use("/api/recordings", recordingRoutes);
 
+app.use("/api/notifications", notificationRoutes);
+
 app.use("/api/ai", aiRoutes);
 
 // =========================================
@@ -130,6 +134,7 @@ app.use("/api/ai", aiRoutes);
 chatSocket(io);
 videoSocket(io);
 dmSocket(io);
+notificationSocket(io);
 
 // =========================================
 // HEALTH CHECK
